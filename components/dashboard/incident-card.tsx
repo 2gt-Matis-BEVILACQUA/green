@@ -37,12 +37,12 @@ const categoryIcons = {
   Autre: AlertCircle,
 }
 
-const priorityVariants = {
+const priorityVariants: Record<Priority, "default" | "secondary" | "destructive"> = {
   Low: "default",
-  Medium: "amber",
-  High: "coral",
-  Critical: "coral",
-} as const
+  Medium: "secondary",
+  High: "destructive",
+  Critical: "destructive",
+}
 
 export function IncidentCard({
   id,
