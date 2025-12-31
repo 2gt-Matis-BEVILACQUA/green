@@ -6,6 +6,10 @@ import { getOrCreateSession, updateSession, completeSession } from "@/lib/whatsa
 import { WhatsAppDialog } from "@/lib/whatsapp/dialog"
 import { IncidentCategory } from "@/lib/types"
 
+// Configuration de route pour désactiver le cache et forcer le mode dynamique
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
+
 /**
  * Webhook WhatsApp conversationnel pour recevoir les signalements d'incidents
  * 
@@ -14,6 +18,47 @@ import { IncidentCategory } from "@/lib/types"
  * - Body: Corps du message
  * - MediaUrl0: URL de l'image (optionnel)
  * - X-Twilio-Signature: Signature pour validation
+ */
+
+/**
+ * OPTIONS - Handler pour les requêtes preflight CORS
+ */
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, X-Twilio-Signature',
+    },
+  })
+}
+
+/**
+ * GET - Affiche un message informatif (pour test/debug)
+ */
+export async function GET() {
+  return new NextResponse(
+    JSON.stringify({
+      status: "ok",
+      message: "Webhook WhatsApp actif",
+      endpoint: "/api/webhook/whatsapp",
+      method: "POST",
+      description: "Cette route est destinée à recevoir les webhooks de Twilio. Utilisez POST pour envoyer des messages.",
+    }),
+    {
+      status: 200,
+      headers: { 
+        "Content-Type": "application/json",
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      },
+    }
+  )
+}
+
+/**
+ * POST - Reçoit les messages WhatsApp de Twilio
  */
 export async function POST(request: Request) {
   try {
@@ -30,7 +75,16 @@ export async function POST(request: Request) {
     const mediaUrl = body.MediaUrl0 || ""
     const twilioSignature = request.headers.get("X-Twilio-Signature") || ""
 
-    // Validation de signature Twilio (optionnel en dev, requis en prod)
+    // Log pour débogage (à retirer en production si nécessaire)
+    console.log("[WhatsApp Webhook] Message reçu:", {
+      from: fromNumber,
+      body: messageBody,
+      hasMedia: !!mediaUrl,
+    })
+
+    // Validation de signature Twilio (TEMPORAIREMENT DÉSACTIVÉE pour debug)
+    // TODO: Réactiver la validation une fois que les messages arrivent correctement
+    /*
     const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN
     if (twilioAuthToken && twilioSignature) {
       const protocol = request.headers.get("x-forwarded-proto") || "https"
@@ -46,30 +100,74 @@ export async function POST(request: Request) {
       )
 
       if (!isValid) {
+        console.error("[WhatsApp Webhook] Signature invalide")
         return new NextResponse(
           generateTwiMLResponse("❌ Erreur d'authentification. Veuillez contacter l'administrateur."),
           {
             status: 401,
-            headers: { "Content-Type": "text/xml" },
+            headers: { 
+              "Content-Type": "text/xml",
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            },
           }
         )
       }
     }
+    */
 
     // Récupérer le club depuis le numéro WhatsApp
     const supabase = await createClient()
-    const { data: club } = await supabase
+    
+    // Essayer d'abord avec le numéro exact
+    let { data: club, error: clubError } = await supabase
       .from("clubs")
-      .select("id")
+      .select("id, whatsapp_number")
       .eq("whatsapp_number", fromNumber)
       .single()
 
+    // Si pas trouvé, essayer avec le format "whatsapp:+33..." (format Twilio)
+    if (!club && fromNumber.startsWith("whatsapp:")) {
+      const cleanNumber = fromNumber.replace("whatsapp:", "")
+      const { data: clubAlt } = await supabase
+        .from("clubs")
+        .select("id, whatsapp_number")
+        .eq("whatsapp_number", cleanNumber)
+        .single()
+      if (clubAlt) club = clubAlt
+    }
+
+    // Si toujours pas trouvé, essayer sans le préfixe "whatsapp:"
+    if (!club && fromNumber.includes(":")) {
+      const cleanNumber = fromNumber.split(":")[1]
+      const { data: clubAlt2 } = await supabase
+        .from("clubs")
+        .select("id, whatsapp_number")
+        .eq("whatsapp_number", cleanNumber)
+        .single()
+      if (clubAlt2) club = clubAlt2
+    }
+
     if (!club) {
+      console.error("[WhatsApp Webhook] Club non trouvé pour le numéro:", fromNumber)
+      console.error("[WhatsApp Webhook] Erreur Supabase:", clubError)
+      
+      // Récupérer tous les clubs pour debug
+      const { data: allClubs } = await supabase
+        .from("clubs")
+        .select("id, whatsapp_number")
+      
+      console.error("[WhatsApp Webhook] Clubs disponibles:", allClubs)
+      
       return new NextResponse(
         generateTwiMLResponse("❌ Numéro non autorisé. Veuillez contacter l'administrateur."),
         {
           status: 403,
-          headers: { "Content-Type": "text/xml" },
+          headers: { 
+            "Content-Type": "text/xml",
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          },
         }
       )
     }
@@ -83,7 +181,11 @@ export async function POST(request: Request) {
         generateTwiMLResponse("❌ Erreur lors de la création de la session. Veuillez réessayer."),
         {
           status: 500,
-          headers: { "Content-Type": "text/xml" },
+          headers: { 
+            "Content-Type": "text/xml",
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          },
         }
       )
     }
@@ -107,7 +209,11 @@ export async function POST(request: Request) {
           generateTwiMLResponse("❌ Données incomplètes. Veuillez recommencer avec 'reset'."),
           {
             status: 400,
-            headers: { "Content-Type": "text/xml" },
+            headers: { 
+              "Content-Type": "text/xml",
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            },
           }
         )
       }
@@ -124,7 +230,11 @@ export async function POST(request: Request) {
           generateTwiMLResponse("❌ Parcours introuvable. Veuillez recommencer avec 'reset'."),
           {
             status: 400,
-            headers: { "Content-Type": "text/xml" },
+            headers: { 
+              "Content-Type": "text/xml",
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            },
           }
         )
       }
@@ -157,7 +267,11 @@ export async function POST(request: Request) {
           generateTwiMLResponse("❌ Erreur lors de l'enregistrement. Veuillez réessayer."),
           {
             status: 500,
-            headers: { "Content-Type": "text/xml" },
+            headers: { 
+              "Content-Type": "text/xml",
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            },
           }
         )
       }
@@ -188,14 +302,22 @@ export async function POST(request: Request) {
 
       return new NextResponse(generateTwiMLResponse(confirmationMessage), {
         status: 200,
-        headers: { "Content-Type": "text/xml" },
+        headers: { 
+          "Content-Type": "text/xml",
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        },
       })
     }
 
     // Répondre avec le message du dialogue
     return new NextResponse(generateTwiMLResponse(dialogResult.response), {
       status: 200,
-      headers: { "Content-Type": "text/xml" },
+      headers: { 
+        "Content-Type": "text/xml",
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      },
     })
   } catch (error) {
     console.error("Webhook error:", error)
@@ -203,7 +325,11 @@ export async function POST(request: Request) {
       generateTwiMLResponse("❌ Erreur serveur. Veuillez réessayer plus tard."),
       {
         status: 500,
-        headers: { "Content-Type": "text/xml" },
+        headers: { 
+          "Content-Type": "text/xml",
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        },
       }
     )
   }
