@@ -28,6 +28,7 @@ export interface Incident {
   status: IncidentStatus
   reported_by: string | null
   resolved_at: string | null
+  internal_note?: string | null
 }
 
 export interface Club {

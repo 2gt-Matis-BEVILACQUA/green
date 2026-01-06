@@ -28,7 +28,9 @@ export function HeaderWithWeather({ courseName }: HeaderWithWeatherProps) {
     <div className="flex items-center justify-between border-b border-slate-200 bg-white shadow-sm px-8 py-4">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-[#064e3b]">
-          Exploitation Terrain - {courseName}
+          {courseName === "État Global du Domaine" 
+            ? courseName 
+            : `Exploitation Terrain - ${courseName}`}
         </h1>
       </div>
       

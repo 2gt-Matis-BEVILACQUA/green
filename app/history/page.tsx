@@ -2,21 +2,24 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { PremiumSidebar } from "@/components/dashboard/premium-sidebar"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/components/ui/use-toast"
-import { History, AlertTriangle, Calendar, Filter, Download } from "lucide-react"
-import { Incident, Course, IncidentCategory } from "@/lib/types"
-import { formatTimeAgo } from "@/lib/utils"
-import { motion, AnimatePresence } from "framer-motion"
-import { PremiumIncidentCard } from "@/components/dashboard/premium-incident-card"
-import { IncidentDetailsSheet } from "@/components/dashboard/incident-details-sheet"
+import { Search, ChevronLeft, ChevronRight, Eye, Calendar } from "lucide-react"
+import { Incident, Course, IncidentCategory, Priority } from "@/lib/types"
+import { format } from "date-fns"
+import { fr } from "date-fns/locale"
+import { motion } from "framer-motion"
+import { IncidentDrawer } from "@/components/dashboard/incident-drawer"
 import { Toaster } from "@/components/ui/toaster"
+import { PriorityBadge } from "@/components/dashboard/priority-badge"
 
 const clubId = "00000000-0000-0000-0000-000000000001"
+const ITEMS_PER_PAGE = 10
 
 export default function HistoryPage() {
   const [incidents, setIncidents] = useState<Incident[]>([])
@@ -26,16 +29,20 @@ export default function HistoryPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedCourseId, setSelectedCourseId] = useState<string>("all")
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
-  const [dateRange, setDateRange] = useState<string>("all")
+  const [selectedHole, setSelectedHole] = useState<string>("all")
+  const [selectedPriority, setSelectedPriority] = useState<string>("all")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
+  const [currentPage, setCurrentPage] = useState(1)
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null)
-  const [isSheetOpen, setIsSheetOpen] = useState(false)
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const { toast } = useToast()
 
   useEffect(() => {
     fetchCourses()
     fetchResolvedIncidents()
     
-    // Restaurer les filtres depuis localStorage
     const savedCourseId = localStorage.getItem("historySelectedCourseId")
     if (savedCourseId) setSelectedCourseId(savedCourseId)
   }, [])
@@ -95,30 +102,45 @@ export default function HistoryPage() {
       filtered = filtered.filter((inc) => inc.category === selectedCategory)
     }
 
-    // Filtre par date
-    if (dateRange !== "all") {
-      const now = new Date()
-      const filterDate = new Date()
-      
-      switch (dateRange) {
-        case "today":
-          filterDate.setHours(0, 0, 0, 0)
-          break
-        case "week":
-          filterDate.setDate(now.getDate() - 7)
-          break
-        case "month":
-          filterDate.setMonth(now.getMonth() - 1)
-          break
-        case "3months":
-          filterDate.setMonth(now.getMonth() - 3)
-          break
-      }
-      
+    // Filtre par trou
+    if (selectedHole !== "all") {
+      filtered = filtered.filter((inc) => inc.hole_number.toString() === selectedHole)
+    }
+
+    // Filtre par priorité
+    if (selectedPriority !== "all") {
+      filtered = filtered.filter((inc) => inc.priority === selectedPriority)
+    }
+
+    // Filtre par date range
+    if (dateFrom) {
+      const fromDate = new Date(dateFrom)
+      fromDate.setHours(0, 0, 0, 0)
       filtered = filtered.filter((inc) => {
-        const resolvedDate = inc.resolved_at ? new Date(inc.resolved_at) : new Date(inc.created_at)
-        return resolvedDate >= filterDate
+        const incDate = inc.resolved_at ? new Date(inc.resolved_at) : new Date(inc.created_at)
+        return incDate >= fromDate
       })
+    }
+
+    if (dateTo) {
+      const toDate = new Date(dateTo)
+      toDate.setHours(23, 59, 59, 999)
+      filtered = filtered.filter((inc) => {
+        const incDate = inc.resolved_at ? new Date(inc.resolved_at) : new Date(inc.created_at)
+        return incDate <= toDate
+      })
+    }
+
+    // Filtre par recherche
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(
+        (inc) =>
+          inc.description?.toLowerCase().includes(query) ||
+          inc.hole_number.toString().includes(query) ||
+          inc.category.toLowerCase().includes(query) ||
+          inc.reported_by?.toLowerCase().includes(query)
+      )
     }
 
     // Trier par date de résolution (plus récent en premier)
@@ -129,266 +151,353 @@ export default function HistoryPage() {
     })
 
     setFilteredIncidents(filtered)
-  }, [incidents, selectedCourseId, selectedCategory, dateRange])
+    setCurrentPage(1) // Reset à la page 1 quand les filtres changent
+  }, [incidents, selectedCourseId, selectedCategory, selectedHole, selectedPriority, searchQuery, dateFrom, dateTo])
+
+  // Pagination
+  const totalPages = Math.ceil(filteredIncidents.length / ITEMS_PER_PAGE)
+  const paginatedIncidents = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE
+    return filteredIncidents.slice(start, start + ITEMS_PER_PAGE)
+  }, [filteredIncidents, currentPage])
 
   const handleViewDetails = (incident: Incident) => {
     setSelectedIncident(incident)
-    setIsSheetOpen(true)
+    setIsDrawerOpen(true)
+  }
+
+  const handleSaveNote = async (incidentId: string, note: string) => {
+    try {
+      const response = await fetch(`/api/incidents/${incidentId}/note`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note }),
+      })
+      if (response.ok) {
+        setIncidents((prev) =>
+          prev.map((inc) => (inc.id === incidentId ? { ...inc, internal_note: note } : inc))
+        )
+      }
+    } catch (error) {
+      // Erreur silencieuse
+    }
   }
 
   const categories: IncidentCategory[] = ["Arrosage", "Tonte", "Bunker", "Signaletique", "Autre"]
+  const priorities: Priority[] = ["Critical", "High", "Medium", "Low"]
   const selectedCourse = courses.find((c) => c.id === selectedCourseId)
+  const holes = selectedCourse ? Array.from({ length: selectedCourse.hole_count }, (_, i) => i + 1) : []
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#F1F5F9]">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+      className="flex h-screen overflow-hidden bg-slate-50 font-sans"
+    >
       <PremiumSidebar />
       <div className="lg:ml-64 flex flex-1 flex-col overflow-hidden">
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-7xl p-8">
-            <div className="mb-8">
-              <h1 className="text-3xl font-semibold text-[#064e3b]">Archives</h1>
-              <p className="mt-1 text-sm text-slate-600">
+          <div className="w-full px-8 py-8">
+            {/* Header */}
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              className="mb-8"
+            >
+              <h1 className="text-3xl font-bold text-slate-900">Archives</h1>
+              <p className="mt-2 text-sm text-slate-500">
                 Consultation de l&apos;historique des incidents résolus
               </p>
-            </div>
+            </motion.div>
 
-            {/* Filtres */}
-            <Card className="mb-6 border border-slate-200 bg-white shadow-xl">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-[#1E293B]">
-                  <Filter className="h-5 w-5" />
-                  Filtres
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-[#1E293B]">
-                      Parcours
-                    </label>
-                    <Select value={selectedCourseId} onValueChange={setSelectedCourseId}>
-                      <SelectTrigger className="border-2 border-slate-300 bg-white text-slate-900 shadow-sm hover:border-[#064e3b]/30 focus:border-[#064e3b]">
-                        <SelectValue placeholder="Sélectionner un parcours">
-                          {selectedCourseId === "all"
-                            ? "Tous les parcours"
-                            : selectedCourse?.name || "Sélectionner un parcours"}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Tous les parcours</SelectItem>
-                        {courses
-                          .filter((c) => c.is_active)
-                          .map((course) => (
-                            <SelectItem key={course.id} value={course.id}>
-                              {course.name} ({course.hole_count} trous)
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
+            {/* Barre d'outils de filtrage avancée */}
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.1 }}
+              className="mb-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+            >
+              <div className="mb-4 flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-slate-500" />
+                <h3 className="text-sm font-semibold text-slate-900">Filtres avancés</h3>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                {/* Recherche plein texte */}
+                <div className="lg:col-span-2">
+                  <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                    Recherche plein texte
+                  </label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      placeholder="Rechercher par mots-clés..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10 border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                    />
                   </div>
+                </div>
 
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-[#1E293B]">
-                      Catégorie
-                    </label>
-                    <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                      <SelectTrigger className="border-2 border-slate-300 bg-white text-slate-900 shadow-sm hover:border-[#064e3b]/30 focus:border-[#064e3b]">
-                        <SelectValue placeholder="Toutes les catégories">
-                          {selectedCategory === "all"
-                            ? "Toutes les catégories"
-                            : categories.find((c) => c === selectedCategory) || "Toutes les catégories"}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Toutes les catégories</SelectItem>
-                        {categories.map((cat) => (
-                          <SelectItem key={cat} value={cat}>
-                            {cat}
+                {/* Date De */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                    Date de début
+                  </label>
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Date À */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                    Date de fin
+                  </label>
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-4">
+                {/* Parcours */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                    Parcours
+                  </label>
+                  <Select value={selectedCourseId} onValueChange={setSelectedCourseId}>
+                    <SelectTrigger className="border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500">
+                      <SelectValue placeholder="Tous" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tous les parcours</SelectItem>
+                      {courses
+                        .filter((c) => c.is_active)
+                        .map((course) => (
+                          <SelectItem key={course.id} value={course.id}>
+                            {course.name}
                           </SelectItem>
                         ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-[#1E293B]">
-                      Période
-                    </label>
-                    <Select value={dateRange} onValueChange={setDateRange}>
-                      <SelectTrigger className="border-2 border-slate-300 bg-white text-slate-900 shadow-sm hover:border-[#064e3b]/30 focus:border-[#064e3b]">
-                        <SelectValue placeholder="Toutes les périodes">
-                          {dateRange === "all"
-                            ? "Toutes les périodes"
-                            : dateRange === "today"
-                            ? "Aujourd'hui"
-                            : dateRange === "week"
-                            ? "7 derniers jours"
-                            : dateRange === "month"
-                            ? "30 derniers jours"
-                            : dateRange === "3months"
-                            ? "3 derniers mois"
-                            : "Toutes les périodes"}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Toutes les périodes</SelectItem>
-                        <SelectItem value="today">Aujourd&apos;hui</SelectItem>
-                        <SelectItem value="week">7 derniers jours</SelectItem>
-                        <SelectItem value="month">30 derniers jours</SelectItem>
-                        <SelectItem value="3months">3 derniers mois</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                    </SelectContent>
+                  </Select>
                 </div>
-              </CardContent>
-            </Card>
 
-            {/* Statistiques */}
-            <div className="mb-6 grid gap-4 md:grid-cols-3">
-              <Card className="border border-slate-200 bg-white shadow-xl">
-                <CardContent className="pt-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-slate-600">Total résolu</p>
-                      <p className="text-2xl font-semibold text-[#1E293B]">
-                        {filteredIncidents.length}
-                      </p>
-                    </div>
-                    <History className="h-8 w-8 text-[#064e3b]" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border border-slate-200 bg-white shadow-xl">
-                <CardContent className="pt-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-slate-600">Résolu aujourd&apos;hui</p>
-                      <p className="text-2xl font-semibold text-[#1E293B]">
-                        {filteredIncidents.filter((inc) => {
-                          const resolvedDate = inc.resolved_at
-                            ? new Date(inc.resolved_at)
-                            : new Date(inc.created_at)
-                          const today = new Date()
-                          today.setHours(0, 0, 0, 0)
-                          return resolvedDate >= today
-                        }).length}
-                      </p>
-                    </div>
-                    <Calendar className="h-8 w-8 text-[#064e3b]" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border border-slate-200 bg-white shadow-xl">
-                <CardContent className="pt-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-slate-600">Résolu cette semaine</p>
-                      <p className="text-2xl font-semibold text-[#1E293B]">
-                        {filteredIncidents.filter((inc) => {
-                          const resolvedDate = inc.resolved_at
-                            ? new Date(inc.resolved_at)
-                            : new Date(inc.created_at)
-                          const weekAgo = new Date()
-                          weekAgo.setDate(weekAgo.getDate() - 7)
-                          return resolvedDate >= weekAgo
-                        }).length}
-                      </p>
-                    </div>
-                    <Calendar className="h-8 w-8 text-[#064e3b]" />
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Liste des incidents résolus */}
-            <Card className="border border-slate-200 bg-white shadow-xl">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2 text-[#064e3b]">
-                      <History className="h-5 w-5" />
-                      Incidents résolus
-                    </CardTitle>
-                    <CardDescription className="text-slate-600">
-                      {filteredIncidents.length} incident{filteredIncidents.length > 1 ? "s" : ""} résolu
-                      {filteredIncidents.length > 1 ? "s" : ""}
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {loading ? (
-                  <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                    {Array.from({ length: 6 }).map((_, i) => (
-                      <Skeleton key={i} className="h-64 w-full" />
-                    ))}
-                  </div>
-                ) : error ? (
-                  <div className="flex flex-col items-center justify-center py-12">
-                    <AlertTriangle className="mb-4 h-12 w-12 text-[#475569]" />
-                    <p className="text-sm text-[#475569]">{error}</p>
-                    <Button
-                      onClick={() => {
-                        setError(null)
-                        fetchResolvedIncidents()
-                      }}
-                      className="mt-4 bg-gradient-to-r from-emerald-900 to-emerald-800 text-white hover:from-emerald-800 hover:to-emerald-700 border border-emerald-900/20 shadow-md"
-                    >
-                      Réessayer
-                    </Button>
-                  </div>
-                ) : filteredIncidents.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <History className="mb-4 h-12 w-12 text-[#475569]" />
-                    <p className="text-sm font-medium text-[#0F172A]">Aucun incident résolu</p>
-                    <p className="mt-1 text-sm text-[#475569]">
-                      {selectedCourseId !== "all" || selectedCategory !== "all" || dateRange !== "all"
-                        ? "Aucun incident ne correspond aux filtres sélectionnés."
-                        : "Aucun incident n&apos;a encore été résolu."}
-                    </p>
-                  </div>
-                ) : (
-                  <AnimatePresence mode="popLayout">
-                    <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                      {filteredIncidents.map((incident, index) => (
-                        <motion.div
-                          key={incident.id}
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.95 }}
-                          transition={{ delay: index * 0.05 }}
-                        >
-                          <PremiumIncidentCard
-                            id={incident.id}
-                            holeNumber={incident.hole_number}
-                            category={incident.category}
-                            description={incident.description}
-                            photoUrl={incident.photo_url}
-                            priority={incident.priority}
-                            createdAt={new Date(incident.created_at)}
-                            onViewDetails={() => handleViewDetails(incident)}
-                          />
-                        </motion.div>
+                {/* Catégorie */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                    Catégorie
+                  </label>
+                  <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                    <SelectTrigger className="border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500">
+                      <SelectValue placeholder="Toutes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Toutes les catégories</SelectItem>
+                      {categories.map((cat) => (
+                        <SelectItem key={cat} value={cat}>
+                          {cat}
+                        </SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Trou */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                    Trou
+                  </label>
+                  <Select value={selectedHole} onValueChange={setSelectedHole}>
+                    <SelectTrigger className="border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500">
+                      <SelectValue placeholder="Tous" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tous les trous</SelectItem>
+                      {holes.map((hole) => (
+                        <SelectItem key={hole} value={hole.toString()}>
+                          Trou {hole}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Priorité */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                    Priorité
+                  </label>
+                  <Select value={selectedPriority} onValueChange={setSelectedPriority}>
+                    <SelectTrigger className="border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500">
+                      <SelectValue placeholder="Toutes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Toutes les priorités</SelectItem>
+                      {priorities.map((priority) => (
+                        <SelectItem key={priority} value={priority}>
+                          <PriorityBadge priority={priority} />
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Table */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.2 }}
+              className="rounded-xl border border-slate-200 bg-white shadow-sm"
+            >
+              {loading ? (
+                <div className="p-8">
+                  <Skeleton className="h-12 w-full mb-2" />
+                  <Skeleton className="h-12 w-full mb-2" />
+                  <Skeleton className="h-12 w-full mb-2" />
+                </div>
+              ) : error ? (
+                <div className="p-12 text-center">
+                  <p className="text-sm text-slate-600">{error}</p>
+                  <Button
+                    onClick={fetchResolvedIncidents}
+                    className="mt-4 bg-[#064e3b] text-white hover:bg-[#064e3b]/90 transition-all duration-200"
+                  >
+                    Réessayer
+                  </Button>
+                </div>
+              ) : paginatedIncidents.length === 0 ? (
+                <div className="p-12 text-center">
+                  <p className="text-sm font-medium text-slate-900">Aucun incident trouvé</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {searchQuery || selectedCategory !== "all" || selectedHole !== "all" || selectedPriority !== "all" || dateFrom || dateTo
+                      ? "Aucun incident ne correspond aux filtres sélectionnés."
+                      : "Aucun incident n&apos;a encore été résolu."}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Trou</TableHead>
+                          <TableHead>Catégorie</TableHead>
+                          <TableHead>Priorité</TableHead>
+                          <TableHead>Statut</TableHead>
+                          <TableHead className="text-right">Action</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedIncidents.map((incident, index) => {
+                          const resolvedDate = incident.resolved_at
+                            ? new Date(incident.resolved_at)
+                            : new Date(incident.created_at)
+
+                          return (
+                            <motion.tr
+                              key={incident.id}
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: index * 0.05, duration: 0.3 }}
+                              className="transition-colors hover:bg-slate-50"
+                            >
+                              <TableCell className="font-medium text-slate-900">
+                                {format(resolvedDate, "d MMM yyyy", { locale: fr })}
+                                <br />
+                                <span className="text-xs text-slate-500">
+                                  {format(resolvedDate, "HH:mm", { locale: fr })}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <span className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-2.5 py-1 text-sm font-bold text-white">
+                                  {incident.hole_number}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-slate-700">{incident.category}</TableCell>
+                              <TableCell>
+                                <PriorityBadge priority={incident.priority} />
+                              </TableCell>
+                              <TableCell>
+                                <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+                                  Résolu
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleViewDetails(incident)}
+                                  className="text-slate-600 hover:text-slate-900 transition-all duration-200"
+                                >
+                                  <Eye className="mr-1.5 h-4 w-4" />
+                                  Voir les détails
+                                </Button>
+                              </TableCell>
+                            </motion.tr>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Pagination */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between border-t border-slate-200 px-4 py-4">
+                      <p className="text-sm text-slate-500">
+                        Page {currentPage} sur {totalPages}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                          className="border-slate-300 transition-all duration-200"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                          Précédent
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                          disabled={currentPage === totalPages}
+                          className="border-slate-300 transition-all duration-200"
+                        >
+                          Suivant
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                  </AnimatePresence>
-                )}
-              </CardContent>
-            </Card>
+                  )}
+                </>
+              )}
+            </motion.div>
           </div>
         </main>
       </div>
 
-      {/* Modal détails */}
-      <IncidentDetailsSheet
+      {/* Drawer */}
+      <IncidentDrawer
         incident={selectedIncident}
-        open={isSheetOpen}
-        onOpenChange={setIsSheetOpen}
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        onSaveNote={handleSaveNote}
       />
 
       <Toaster />
-    </div>
+    </motion.div>
   )
 }

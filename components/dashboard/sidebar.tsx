@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { Home, History, Settings, Activity } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -16,13 +17,19 @@ export function Sidebar() {
 
   return (
     <div className="flex h-screen w-64 flex-col border-r bg-white">
-      <div className="flex h-16 items-center border-b px-6">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-deep">
-            <Activity className="h-5 w-5 text-white" />
+      <div className="flex h-20 items-center justify-center border-b px-6">
+        <Link href="/" className="flex items-center justify-center">
+          <div className="relative h-16 w-16 flex items-center justify-center">
+            <Image
+              src="/logo.png"
+              alt="GreenLog OS"
+              width={64}
+              height={64}
+              className="object-contain"
+              priority
+            />
           </div>
-          <span className="text-lg font-semibold text-foreground">GreenLog OS</span>
-        </div>
+        </Link>
       </div>
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navigation.map((item) => {

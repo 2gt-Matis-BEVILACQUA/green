@@ -6,12 +6,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/components/ui/use-toast"
-import { Settings, Map, Building2, MessageSquare, Upload, Copy, Check } from "lucide-react"
+import { Settings, Map, Building2, MessageSquare, Copy, Check, Plus, Home, Phone, Key, Loader2 } from "lucide-react"
 import { Course, Club } from "@/lib/types"
 import { motion } from "framer-motion"
+import Image from "next/image"
 
 const clubId = "00000000-0000-0000-0000-000000000001"
 
@@ -22,6 +24,8 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState("profile")
   const [copied, setCopied] = useState(false)
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true)
+  const [emailNotifications, setEmailNotifications] = useState(false)
   const { toast } = useToast()
 
   const [clubForm, setClubForm] = useState({
@@ -33,12 +37,33 @@ export default function SettingsPage() {
 
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [courseForm, setCourseForm] = useState({ name: "", hole_count: 18 })
+  const [courseStats, setCourseStats] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      const stats: Record<string, number> = {}
+      for (const course of courses) {
+        try {
+          const response = await fetch(`/api/courses/${course.id}/stats`)
+          if (response.ok) {
+            const data = await response.json()
+            stats[course.id] = data.count || 0
+          }
+        } catch (error) {
+          stats[course.id] = 0
+        }
+      }
+      setCourseStats(stats)
+    }
+    if (courses.length > 0) {
+      fetchStats()
+    }
+  }, [courses])
 
   useEffect(() => {
     fetchClub()
     fetchCourses()
     
-    // Restaurer l'onglet actif depuis l'URL
     const params = new URLSearchParams(window.location.search)
     const tab = params.get("tab")
     if (tab) setActiveTab(tab)
@@ -209,170 +234,197 @@ export default function SettingsPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+
   return (
-    <div className="flex h-screen overflow-hidden bg-[#F1F5F9]">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+      className="flex h-screen overflow-hidden bg-slate-50 font-sans"
+    >
       <PremiumSidebar />
       <div className="lg:ml-64 flex flex-1 flex-col overflow-hidden">
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-4xl p-8">
+          <div className="w-full px-8 py-8">
+            {/* Header */}
             <div className="mb-8">
-              <h1 className="text-3xl font-semibold text-[#064e3b]">Paramètres</h1>
-              <p className="mt-1 text-sm text-slate-600">
+              <h1 className="text-3xl font-bold text-slate-900">Paramètres</h1>
+              <p className="mt-2 text-sm text-slate-500">
                 Gérez les paramètres de votre club et de vos parcours
               </p>
             </div>
 
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
               <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="profile">Profil du Club</TabsTrigger>
+                <TabsTrigger value="profile">Profil</TabsTrigger>
                 <TabsTrigger value="courses">Gestion des Parcours</TabsTrigger>
-                <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
+                <TabsTrigger value="whatsapp">Notifications WhatsApp</TabsTrigger>
               </TabsList>
 
-              {/* Profil du Club */}
-              <TabsContent value="profile" className="space-y-6">
-                <Card className="border border-slate-200 bg-white shadow-xl">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-[#0F172A]">
-                      <Building2 className="h-5 w-5" />
-                      Informations du Club
-                    </CardTitle>
-                    <CardDescription className="text-[#475569]">
-                      Modifiez les informations de base de votre club
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {loading ? (
-                      <div className="space-y-4">
-                        <Skeleton className="h-10 w-full" />
-                        <Skeleton className="h-10 w-full" />
-                        <Skeleton className="h-24 w-full" />
-                      </div>
-                    ) : (
-                      <>
-                        <div>
-                          <Label htmlFor="nom" className="text-[#0F172A]">
-                            Nom du Golf
-                          </Label>
-                          <Input
-                            id="nom"
-                            value={clubForm.nom}
-                            onChange={(e) => setClubForm({ ...clubForm, nom: e.target.value })}
-                            className="mt-1 border-[#E2E8F0]"
-                            placeholder="Ex: Golf de Biarritz"
-                          />
+              {/* Profil */}
+              <TabsContent value="profile" className="space-y-8">
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="space-y-8"
+                >
+                  <Card className="border border-slate-200 bg-white shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-slate-900">
+                        <Building2 className="h-5 w-5" />
+                        Informations du Club
+                      </CardTitle>
+                      <CardDescription className="text-slate-500">
+                        Modifiez les informations de base de votre club
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      {loading ? (
+                        <div className="space-y-4">
+                          <Skeleton className="h-10 w-full" />
+                          <Skeleton className="h-10 w-full" />
+                          <Skeleton className="h-24 w-full" />
                         </div>
-                        <div>
-                          <Label htmlFor="adresse" className="text-[#0F172A]">
-                            Adresse
-                          </Label>
-                          <Input
-                            id="adresse"
-                            value={clubForm.adresse}
-                            onChange={(e) => setClubForm({ ...clubForm, adresse: e.target.value })}
-                            className="mt-1 border-[#E2E8F0]"
-                            placeholder="Ex: 123 Avenue du Golf, 64200 Biarritz"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="logo" className="text-[#0F172A]">
-                            Logo (URL)
-                          </Label>
-                          <Input
-                            id="logo"
-                            value={club?.logo || ""}
-                            onChange={(e) => {
-                              // TODO: Implémenter upload de fichier
-                            }}
-                            className="mt-1 border-[#E2E8F0]"
-                            placeholder="https://..."
-                            disabled
-                          />
-                          <p className="mt-1 text-xs text-[#475569]">
-                            L&apos;upload de fichier sera disponible prochainement
-                          </p>
-                        </div>
-                        <div>
-                          <Label htmlFor="timezone" className="text-[#0F172A]">
-                            Fuseau horaire
-                          </Label>
-                          <Input
-                            id="timezone"
-                            defaultValue="Europe/Paris"
-                            className="mt-1 border-[#E2E8F0]"
-                            disabled
-                          />
-                          <p className="mt-1 text-xs text-[#475569]">
-                            Configuration du fuseau horaire à venir
-                          </p>
-                        </div>
-                        <Button
-                          onClick={handleSaveClub}
-                          disabled={saving}
-                          className="bg-gradient-to-r from-emerald-900 to-emerald-800 text-white hover:from-emerald-800 hover:to-emerald-700 border border-emerald-900/20 shadow-md"
-                        >
-                          {saving ? "Enregistrement..." : "Enregistrer les modifications"}
-                        </Button>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
+                      ) : (
+                        <>
+                          <div>
+                            <Label htmlFor="nom" className="text-slate-900 font-medium">
+                              Nom du Golf
+                            </Label>
+                            <div className="relative mt-2">
+                              <Building2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                              <Input
+                                id="nom"
+                                value={clubForm.nom}
+                                onChange={(e) => setClubForm({ ...clubForm, nom: e.target.value })}
+                                className="pl-10 border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                placeholder="Ex: Golf de Biarritz"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <Label htmlFor="adresse" className="text-slate-900 font-medium">
+                              Adresse
+                            </Label>
+                            <div className="relative mt-2">
+                              <Home className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                              <Input
+                                id="adresse"
+                                value={clubForm.adresse}
+                                onChange={(e) => setClubForm({ ...clubForm, adresse: e.target.value })}
+                                className="pl-10 border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                placeholder="Ex: 123 Avenue du Golf, 64200 Biarritz"
+                              />
+                            </div>
+                          </div>
+                          <Button
+                            onClick={handleSaveClub}
+                            disabled={saving}
+                            className="bg-[#064e3b] text-white hover:bg-[#064e3b]/90 transition-all duration-200 disabled:opacity-50"
+                          >
+                            {saving ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Enregistrement...
+                              </>
+                            ) : (
+                              "Enregistrer les modifications"
+                            )}
+                          </Button>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                </motion.div>
               </TabsContent>
 
               {/* Gestion des Parcours */}
-              <TabsContent value="courses" className="space-y-6">
-                <Card className="border border-slate-200 bg-white shadow-xl">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-[#0F172A]">
-                      <Map className="h-5 w-5" />
-                      Gestion des Parcours
-                    </CardTitle>
-                    <CardDescription className="text-[#475569]">
-                      Ajoutez, modifiez ou supprimez des parcours de golf
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    {/* Formulaire */}
-                    <form onSubmit={handleSaveCourse} className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                      <div>
-                        <Label htmlFor="course-name" className="text-[#0F172A]">
-                          Nom du parcours
-                        </Label>
-                        <Input
-                          id="course-name"
-                          value={courseForm.name}
-                          onChange={(e) => setCourseForm({ ...courseForm, name: e.target.value })}
-                          placeholder="Ex: L'Océan"
-                          className="mt-1 border-[#E2E8F0]"
-                          required
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="course-holes" className="text-[#0F172A]">
-                          Nombre de trous
-                        </Label>
-                        <Input
-                          id="course-holes"
-                          type="number"
-                          min="1"
-                          max="18"
-                          value={courseForm.hole_count}
-                          onChange={(e) =>
-                            setCourseForm({ ...courseForm, hole_count: parseInt(e.target.value) || 18 })
-                          }
-                          className="mt-1 border-[#E2E8F0]"
-                          required
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          type="submit"
-                          disabled={saving}
-                          className="bg-gradient-to-r from-emerald-900 to-emerald-800 text-white hover:from-emerald-800 hover:to-emerald-700 border border-emerald-900/20 shadow-md"
-                        >
-                          {editingCourse ? "Modifier" : "Créer"} le parcours
-                        </Button>
-                        {editingCourse && (
+              <TabsContent value="courses" className="space-y-8">
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="space-y-8"
+                >
+                {/* Bouton Ajouter */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">Parcours</h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Gérez vos parcours de golf
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      setEditingCourse(null)
+                      setCourseForm({ name: "", hole_count: 18 })
+                    }}
+                    className="bg-[#064e3b] text-white hover:bg-[#064e3b]/90 transition-all duration-200"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Ajouter un nouveau parcours
+                  </Button>
+                </div>
+
+                {/* Formulaire */}
+                {(editingCourse || courseForm.name) && (
+                  <Card className="border border-slate-200 bg-white shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="text-slate-900">
+                        {editingCourse ? "Modifier le parcours" : "Nouveau parcours"}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <form onSubmit={handleSaveCourse} className="space-y-4">
+                        <div>
+                          <Label htmlFor="course-name" className="text-slate-900 font-medium">
+                            Nom du parcours
+                          </Label>
+                          <div className="relative mt-2">
+                            <Map className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                            <Input
+                              id="course-name"
+                              value={courseForm.name}
+                              onChange={(e) => setCourseForm({ ...courseForm, name: e.target.value })}
+                              placeholder="Ex: L'Océan"
+                              className="pl-10 border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <Label htmlFor="course-holes" className="text-slate-900 font-medium">
+                            Nombre de trous
+                          </Label>
+                          <Input
+                            id="course-holes"
+                            type="number"
+                            min="1"
+                            max="18"
+                            value={courseForm.hole_count}
+                            onChange={(e) =>
+                              setCourseForm({ ...courseForm, hole_count: parseInt(e.target.value) || 18 })
+                            }
+                            className="mt-2 border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                            required
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            type="submit"
+                            disabled={saving}
+                            className="bg-[#064e3b] text-white hover:bg-[#064e3b]/90 transition-all duration-200 disabled:opacity-50"
+                          >
+                            {saving ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                {editingCourse ? "Modification..." : "Création..."}
+                              </>
+                            ) : (
+                              `${editingCourse ? "Modifier" : "Créer"} le parcours`
+                            )}
+                          </Button>
                           <Button
                             type="button"
                             variant="outline"
@@ -380,145 +432,218 @@ export default function SettingsPage() {
                               setEditingCourse(null)
                               setCourseForm({ name: "", hole_count: 18 })
                             }}
-                            className="border-[#E2E8F0]"
+                            className="border-slate-300 transition-all duration-200"
                           >
                             Annuler
                           </Button>
-                        )}
-                      </div>
-                    </form>
-
-                    {/* Liste des parcours */}
-                    <div className="space-y-2">
-                      <h3 className="text-sm font-semibold text-[#0F172A]">
-                        Parcours existants ({courses.length})
-                      </h3>
-                      {courses.length === 0 ? (
-                        <p className="text-sm text-[#475569]">Aucun parcours configuré</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {courses.map((course) => (
-                            <motion.div
-                              key={course.id}
-                              initial={{ opacity: 0, y: -10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className="flex items-center justify-between rounded-lg border border-[#E2E8F0] bg-white/70 p-4"
-                            >
-                              <div>
-                                <div className="font-medium text-[#0F172A]">{course.name}</div>
-                                <div className="text-sm text-[#475569]">
-                                  {course.hole_count} trous • {course.is_active ? "Actif" : "Inactif"}
-                                </div>
-                              </div>
-                              <div className="flex gap-2">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleEditCourse(course)}
-                                  className="text-[#064e3b] hover:bg-[#064e3b]/10"
-                                >
-                                  Modifier
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDeleteCourse(course.id)}
-                                  className="text-[#E0115F] hover:bg-[#E0115F]/10"
-                                >
-                                  Supprimer
-                                </Button>
-                              </div>
-                            </motion.div>
-                          ))}
                         </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                      </form>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Grille de cartes */}
+                {courses.length === 0 ? (
+                  <Card className="border border-slate-200 bg-white shadow-sm">
+                    <CardContent className="p-12 text-center">
+                      <Map className="mx-auto h-12 w-12 text-slate-400 mb-4" />
+                      <p className="text-sm font-medium text-slate-900">Aucun parcours configuré</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Créez votre premier parcours pour commencer
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    {courses.map((course) => (
+                      <motion.div
+                        key={course.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:shadow-xl"
+                      >
+                        {/* Photo de couverture */}
+                        <div className="relative h-48 w-full bg-gradient-to-br from-emerald-50 to-slate-100">
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <Map className="h-16 w-16 text-slate-300" />
+                          </div>
+                        </div>
+
+                        {/* Contenu */}
+                        <div className="p-6">
+                          <div className="mb-4">
+                            <h3 className="text-lg font-bold text-slate-900">{course.name}</h3>
+                            <p className="mt-1 text-sm text-slate-500">
+                              {course.hole_count} trous • {course.is_active ? "Actif" : "Inactif"}
+                            </p>
+                          </div>
+
+                          {/* Stats */}
+                          <div className="mb-4 rounded-lg bg-slate-50 p-3">
+                            <p className="text-xs text-slate-500">Incidents ce mois-ci</p>
+                            <p className="text-lg font-semibold text-slate-900">
+                              {courseStats[course.id] ?? "-"}
+                            </p>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEditCourse(course)}
+                              className="flex-1 border-slate-300 transition-all duration-200"
+                            >
+                              Modifier
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDeleteCourse(course.id)}
+                              className="border-red-200 text-red-600 hover:bg-red-50 transition-all duration-200"
+                            >
+                              Supprimer
+                            </Button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+                </motion.div>
               </TabsContent>
 
-              {/* Configuration WhatsApp */}
-              <TabsContent value="whatsapp" className="space-y-6">
-                <Card className="border border-slate-200 bg-white shadow-xl">
+              {/* Notifications WhatsApp */}
+              <TabsContent value="whatsapp" className="space-y-8">
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="space-y-8"
+                >
+                <Card className="border border-slate-200 bg-white shadow-sm">
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-[#0F172A]">
+                    <CardTitle className="flex items-center gap-2 text-slate-900">
                       <MessageSquare className="h-5 w-5" />
                       Configuration WhatsApp
                     </CardTitle>
-                    <CardDescription className="text-[#475569]">
+                    <CardDescription className="text-slate-500">
                       Configurez l&apos;intégration avec votre chatbot WhatsApp
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
                     <div>
-                      <Label htmlFor="whatsapp-number" className="text-[#0F172A]">
+                      <Label htmlFor="whatsapp-number" className="text-slate-900 font-medium">
                         Numéro de téléphone WhatsApp
                       </Label>
-                      <Input
-                        id="whatsapp-number"
-                        value={clubForm.whatsapp_number}
-                        onChange={(e) => setClubForm({ ...clubForm, whatsapp_number: e.target.value })}
-                        className="mt-1 border-[#E2E8F0]"
-                        placeholder="+33612345678"
-                      />
-                      <p className="mt-1 text-xs text-[#475569]">
+                      <div className="relative mt-2">
+                        <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <Input
+                          id="whatsapp-number"
+                          value={clubForm.whatsapp_number}
+                          onChange={(e) => setClubForm({ ...clubForm, whatsapp_number: e.target.value })}
+                          className="pl-10 border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                          placeholder="+33612345678"
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
                         Numéro de téléphone lié au chatbot WhatsApp
                       </p>
                     </div>
 
                     <div>
-                      <Label htmlFor="api-key" className="text-[#0F172A]">
+                      <Label htmlFor="api-key" className="text-slate-900 font-medium">
                         API Key
                       </Label>
-                      <Input
-                        id="api-key"
-                        type="password"
-                        value={clubForm.api_key}
-                        onChange={(e) => setClubForm({ ...clubForm, api_key: e.target.value })}
-                        className="mt-1 border-[#E2E8F0]"
-                        placeholder="Votre clé API"
-                      />
-                      <p className="mt-1 text-xs text-[#475569]">
+                      <div className="relative mt-2">
+                        <Key className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <Input
+                          id="api-key"
+                          type="password"
+                          value={clubForm.api_key}
+                          onChange={(e) => setClubForm({ ...clubForm, api_key: e.target.value })}
+                          className="pl-10 border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                          placeholder="Votre clé API"
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
                         Clé API pour l&apos;authentification du webhook
                       </p>
                     </div>
 
                     <div>
-                      <Label className="text-[#0F172A]">URL du Webhook</Label>
-                      <div className="mt-1 flex gap-2">
+                      <Label className="text-slate-900 font-medium">URL du Webhook</Label>
+                      <div className="mt-2 flex gap-2">
                         <Input
                           value={webhookUrl}
                           readOnly
-                          className="border-[#E2E8F0] bg-[#F9FAFB]"
+                          className="border-slate-300 bg-slate-50"
                         />
                         <Button
                           type="button"
                           variant="outline"
                           onClick={copyWebhookUrl}
-                          className="border-[#E2E8F0]"
+                          className="border-slate-300 transition-all duration-200"
                         >
                           {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                         </Button>
                       </div>
-                      <p className="mt-1 text-xs text-[#475569]">
+                      <p className="mt-1 text-xs text-slate-500">
                         Configurez cette URL dans votre service WhatsApp (Twilio, etc.)
                       </p>
+                    </div>
+
+                    {/* Switches pour notifications */}
+                    <div className="space-y-4 border-t border-slate-200 pt-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label className="text-slate-900 font-medium">Notifications WhatsApp</Label>
+                          <p className="text-xs text-slate-500">
+                            Recevez des notifications en temps réel
+                          </p>
+                        </div>
+                        <Switch
+                          checked={notificationsEnabled}
+                          onCheckedChange={setNotificationsEnabled}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label className="text-slate-900 font-medium">Notifications Email</Label>
+                          <p className="text-xs text-slate-500">
+                            Recevez un résumé quotidien par email
+                          </p>
+                        </div>
+                        <Switch
+                          checked={emailNotifications}
+                          onCheckedChange={setEmailNotifications}
+                        />
+                      </div>
                     </div>
 
                     <Button
                       onClick={handleSaveClub}
                       disabled={saving}
-                      className="bg-[#064e3b] text-white hover:bg-[#064e3b]/90"
+                      className="bg-[#064e3b] text-white hover:bg-[#064e3b]/90 transition-all duration-200 disabled:opacity-50"
                     >
-                      {saving ? "Enregistrement..." : "Enregistrer la configuration"}
+                      {saving ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Enregistrement...
+                        </>
+                      ) : (
+                        "Enregistrer la configuration"
+                      )}
                     </Button>
                   </CardContent>
                 </Card>
+                </motion.div>
               </TabsContent>
+
             </Tabs>
           </div>
         </main>
       </div>
-    </div>
+    </motion.div>
   )
 }

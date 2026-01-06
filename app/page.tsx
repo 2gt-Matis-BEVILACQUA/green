@@ -1,186 +1,146 @@
 "use client"
 
 import { useEffect, useState, useMemo } from "react"
-import { motion, AnimatePresence } from "framer-motion"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { motion } from "framer-motion"
 import { PremiumSidebar } from "@/components/dashboard/premium-sidebar"
 import { HeaderWithWeather } from "@/components/dashboard/header-with-weather"
-import { GaugeStatCard } from "@/components/dashboard/gauge-stat-card"
-import { PremiumIncidentCard } from "@/components/dashboard/premium-incident-card"
-import { HoleGrid } from "@/components/dashboard/hole-grid"
-import { TrophyEmptyState } from "@/components/dashboard/trophy-empty-state"
-import { IncidentDetailsSheet } from "@/components/dashboard/incident-details-sheet"
-import { LiveActivityPanel } from "@/components/dashboard/live-activity-panel"
-import { SegmentControl } from "@/components/ui/segment-control"
-import { Skeleton } from "@/components/ui/skeleton"
+import { CourseHealthGauge } from "@/components/dashboard/course-health-gauge"
+import { IncidentFlowCardWide } from "@/components/dashboard/incident-flow-card-wide"
+import { HoleStatusGrid } from "@/components/dashboard/hole-status-grid"
+import { MultiCourseGrid } from "@/components/dashboard/multi-course-grid"
+import { IncidentDrawer } from "@/components/dashboard/incident-drawer"
+import { PriorityBadge } from "@/components/dashboard/priority-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Toaster } from "@/components/ui/toaster"
 import { useToast } from "@/components/ui/use-toast"
-import { Activity, AlertTriangle, TrendingUp } from "lucide-react"
+import { AlertCircle, CheckCircle2, Image as ImageIcon } from "lucide-react"
+import { ExportModal } from "@/components/dashboard/export-modal"
 import { createClient } from "@/lib/supabase/client"
-import { Incident, IncidentCategory, Course, Priority } from "@/lib/types"
+import { Incident, Course, Priority } from "@/lib/types"
 import confetti from "canvas-confetti"
-
-type StatusFilter = "all" | "urgent" | "in_progress" | "resolved"
 
 export default function DashboardPage() {
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [courses, setCourses] = useState<Course[]>([])
   const [filteredIncidents, setFilteredIncidents] = useState<Incident[]>([])
-  const [stats, setStats] = useState({
-    activeIncidents: 0,
-    urgentIncidents: 0,
-    resolutionRate: 0,
-    lastReleve: null as string | null,
-  })
   const [selectedCourseId, setSelectedCourseId] = useState<string>("all")
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
-  const [selectedCategories, setSelectedCategories] = useState<IncidentCategory[]>([])
+  const [selectedPriority, setSelectedPriority] = useState<Priority | "all">("all")
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null)
-  const [isSheetOpen, setIsSheetOpen] = useState(false)
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState("overview")
   const { toast } = useToast()
 
   const clubId = "00000000-0000-0000-0000-000000000001"
 
-  // Charger les courses avec mémorisation du parcours sélectionné
+  // Charger les courses
   useEffect(() => {
     fetchCourses()
-    // Restaurer le parcours sélectionné depuis localStorage
     const savedCourseId = localStorage.getItem("selectedCourseId")
     if (savedCourseId) {
       setSelectedCourseId(savedCourseId)
     }
   }, [])
 
-  // Sauvegarder le parcours sélectionné dans localStorage
   useEffect(() => {
-    if (selectedCourseId && selectedCourseId !== "all") {
+    if (selectedCourseId) {
       localStorage.setItem("selectedCourseId", selectedCourseId)
     }
   }, [selectedCourseId])
 
-  // Charger les incidents et stats
-  useEffect(() => {
-    if (courses.length > 0 && selectedCourseId === "all") {
-      setSelectedCourseId(courses.find((c) => c.is_active)?.id || courses[0].id)
-    }
-  }, [courses])
+  // Ne pas changer automatiquement si "all" est déjà sélectionné
+  // useEffect(() => {
+  //   if (courses.length > 0 && selectedCourseId === "all") {
+  //     setSelectedCourseId(courses.find((c) => c.is_active)?.id || courses[0].id)
+  //   }
+  // }, [courses])
 
   useEffect(() => {
-    if (selectedCourseId && selectedCourseId !== "all") {
-      fetchIncidents()
-      fetchStats()
-    }
+    fetchIncidents()
   }, [selectedCourseId])
 
   useEffect(() => {
-    if (selectedCourseId && selectedCourseId !== "all") {
-      // Setup Supabase Realtime subscription avec reconnexion automatique
-      const supabase = createClient()
-      let channel = supabase
-        .channel("incidents-changes")
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "incidents",
-            filter: `course_id=eq.${selectedCourseId}`,
-          },
-          () => {
-            fetchIncidents()
-            fetchStats()
-          }
-        )
-        .subscribe((status) => {
-          if (status === "SUBSCRIBED") {
-            setError(null)
-          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-            // Tentative de reconnexion
-            setTimeout(() => {
-              channel = supabase
-                .channel("incidents-changes-retry")
-                .on(
-                  "postgres_changes",
-                  {
-                    event: "*",
-                    schema: "public",
-                    table: "incidents",
-                    filter: `course_id=eq.${selectedCourseId}`,
-                  },
-                  () => {
-                    fetchIncidents()
-                    fetchStats()
-                  }
-                )
-                .subscribe()
-            }, 2000)
-          }
-        })
+    const supabase = createClient()
+    let channel = supabase
+      .channel("incidents-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "incidents",
+          filter: selectedCourseId === "all" 
+            ? `club_id=eq.${clubId}`
+            : `course_id=eq.${selectedCourseId}`,
+        },
+        () => {
+          fetchIncidents()
+        }
+      )
+      .subscribe()
 
-      return () => {
-        supabase.removeChannel(channel)
-      }
+    return () => {
+      supabase.removeChannel(channel)
     }
   }, [selectedCourseId])
 
-  const selectedCourse = courses.find((c) => c.id === selectedCourseId)
-
-  // Préparer les données pour la grille de trous
-  const holesData = useMemo(() => {
-    if (!selectedCourse) return []
-    const holes = Array.from({ length: selectedCourse.hole_count }, (_, i) => ({
-      number: i + 1,
-      incident: filteredIncidents.find(
-        (inc) =>
-          inc.hole_number === i + 1 && inc.status !== "Resolved"
-      ),
-    }))
-    return holes
-  }, [selectedCourse, filteredIncidents])
-
-  // Filtrer les incidents
+  // Filtrer les incidents (seulement non résolus + par priorité)
   useEffect(() => {
-    let filtered = [...incidents]
-
-    // Filtre par parcours
+    let filtered = incidents.filter((inc) => inc.status !== "Resolved")
     if (selectedCourseId !== "all") {
       filtered = filtered.filter((inc) => inc.course_id === selectedCourseId)
     }
-
-    // Filtre par statut
-    if (statusFilter === "urgent") {
-      filtered = filtered.filter(
-        (inc) =>
-          (inc.status === "Open" || inc.status === "In_Progress") &&
-          (inc.priority === "High" || inc.priority === "Critical")
-      )
-    } else if (statusFilter === "in_progress") {
-      filtered = filtered.filter((inc) => inc.status === "In_Progress")
-    } else if (statusFilter === "resolved") {
-      filtered = filtered.filter((inc) => inc.status === "Resolved")
-    } else {
-      filtered = filtered.filter((inc) => inc.status !== "Resolved")
+    if (selectedPriority !== "all") {
+      filtered = filtered.filter((inc) => inc.priority === selectedPriority)
     }
-
-    // Filtre par catégories
-    if (selectedCategories.length > 0) {
-      filtered = filtered.filter((inc) => selectedCategories.includes(inc.category))
-    }
-
-    // Filtre par onglet (trous)
-    if (activeTab === "outgoing" && selectedCourse) {
-      filtered = filtered.filter((inc) => inc.hole_number <= Math.ceil(selectedCourse.hole_count / 2))
-    } else if (activeTab === "returning" && selectedCourse) {
-      filtered = filtered.filter((inc) => inc.hole_number > Math.ceil(selectedCourse.hole_count / 2))
-    }
-
+    // Trier par date décroissante
+    filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     setFilteredIncidents(filtered)
-  }, [incidents, selectedCourseId, statusFilter, selectedCategories, activeTab, selectedCourse])
+  }, [incidents, selectedCourseId, selectedPriority])
+
+  // Calculer les stats
+  const stats = useMemo(() => {
+    const activeIncidents = filteredIncidents.filter((inc) => inc.status !== "Resolved")
+    const newIncidents = filteredIncidents.filter((inc) => inc.status === "Open")
+    
+    // Si "Tous les parcours" est sélectionné, calculer la somme totale
+    let totalHoles: number
+    let operationalHoles: number
+    
+    if (selectedCourseId === "all") {
+      // Somme de tous les trous des parcours actifs
+      const activeCourses = courses.filter((c) => c.is_active)
+      totalHoles = activeCourses.reduce((sum, course) => sum + course.hole_count, 0)
+      operationalHoles = totalHoles - activeIncidents.length
+    } else {
+      const selectedCourse = courses.find((c) => c.id === selectedCourseId)
+      totalHoles = selectedCourse?.hole_count || 18
+      operationalHoles = totalHoles - activeIncidents.length
+    }
+    
+    const operationalPercentage = totalHoles > 0 
+      ? Math.round((operationalHoles / totalHoles) * 100)
+      : 100
+
+    // Photos reçues 24h
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const photos24h = filteredIncidents.filter(
+      (inc) =>
+        inc.photo_url &&
+        new Date(inc.created_at) >= yesterday
+    ).length
+
+    return {
+      operationalPercentage,
+      operationalHoles,
+      totalHoles,
+      newIncidents: newIncidents.length,
+      photos24h,
+    }
+  }, [filteredIncidents, courses, selectedCourseId])
 
   const fetchCourses = async () => {
     try {
@@ -226,90 +186,147 @@ export default function DashboardPage() {
     }
   }
 
-  const fetchStats = async () => {
-    try {
-      setError(null)
-      const url = selectedCourseId === "all"
-        ? `/api/stats?club_id=${clubId}`
-        : `/api/stats?club_id=${clubId}&course_id=${selectedCourseId}`
-      const response = await fetch(url)
-      if (!response.ok) {
-        throw new Error("Impossible de charger les statistiques")
-      }
-      const data = await response.json()
-      setStats(data)
-    } catch (error) {
-      // Erreur silencieuse pour les stats (non bloquante)
+  const handleIncidentClick = (incident: Incident) => {
+    setSelectedIncident(incident)
+    setIsDrawerOpen(true)
+  }
+
+  const handleHoleClick = (holeNumber: number, courseId?: string) => {
+    const incident = filteredIncidents.find(
+      (inc) => 
+        inc.hole_number === holeNumber && 
+        inc.status !== "Resolved" &&
+        (courseId ? inc.course_id === courseId : true)
+    )
+    if (incident) {
+      handleIncidentClick(incident)
     }
   }
 
-  const handleResolve = async (id: string) => {
+  const handleTreat = async (incident: Incident) => {
     try {
-      const response = await fetch(`/api/incidents/${id}/resolve`, {
+      const response = await fetch(`/api/incidents/${incident.id}/resolve`, {
         method: "POST",
       })
-
       if (response.ok) {
+        // Animation de célébration
         confetti({
-          particleCount: 100,
-          spread: 70,
+          particleCount: 30,
+          spread: 50,
           origin: { y: 0.6 },
+          colors: ["#064e3b", "#10b981"],
         })
-
+        
         toast({
-          title: "Incident résolu! 🎉",
+          title: "Incident traité",
           description: "L'incident a été marqué comme résolu.",
         })
-
-        setIsSheetOpen(false)
         fetchIncidents()
-        fetchStats()
-      } else {
-        throw new Error("Erreur lors de la résolution")
       }
     } catch (error) {
       toast({
         title: "Erreur",
-        description: "Impossible de résoudre l'incident. Veuillez réessayer.",
+        description: "Impossible de traiter l'incident.",
         variant: "destructive",
       })
     }
   }
 
-  const handleViewDetails = (incident: Incident) => {
-    setSelectedIncident(incident)
-    setIsSheetOpen(true)
-  }
-
-  const handleHoleClick = (holeNumber: number) => {
-    const incident = filteredIncidents.find(
-      (inc) => inc.hole_number === holeNumber && inc.status !== "Resolved"
-    )
-    if (incident) {
-      handleViewDetails(incident)
+  const handleArchive = async (incident: Incident) => {
+    try {
+      const response = await fetch(`/api/incidents/${incident.id}/resolve`, {
+        method: "POST",
+      })
+      if (response.ok) {
+        toast({
+          title: "Incident archivé",
+          description: "L'incident a été archivé.",
+        })
+        fetchIncidents()
+      }
+    } catch (error) {
+      toast({
+        title: "Erreur",
+        description: "Impossible d'archiver l'incident.",
+        variant: "destructive",
+      })
     }
   }
 
-  // Données pour les sparklines
-  const weeklyData = [12, 8, 15, 10, 6, 9, 7]
+  const handleUrgent = async (incident: Incident) => {
+    try {
+      const response = await fetch(`/api/incidents/${incident.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priority: "Critical" }),
+      })
+      if (response.ok) {
+        toast({
+          title: "Priorité mise à jour",
+          description: "L'incident a été marqué comme critique.",
+        })
+        fetchIncidents()
+      }
+    } catch (error) {
+      toast({
+        title: "Erreur",
+        description: "Impossible de mettre à jour la priorité.",
+        variant: "destructive",
+      })
+    }
+  }
 
-  // Incidents récents pour le panneau d'activité
-  const recentIncidents = useMemo(() => {
-    return incidents
-      .filter((inc) => inc.status !== "Resolved")
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .slice(0, 10)
-  }, [incidents])
+  const handleSaveNote = async (incidentId: string, note: string) => {
+    try {
+      const response = await fetch(`/api/incidents/${incidentId}/note`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ note }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Erreur lors de la sauvegarde")
+      }
+
+      // Mettre à jour l'incident dans la liste locale
+      setIncidents((prev) =>
+        prev.map((inc) =>
+          inc.id === incidentId ? { ...inc, internal_note: note } : inc
+        )
+      )
+    } catch (error) {
+      // Erreur silencieuse pour la sauvegarde auto
+    }
+  }
+
+  const selectedCourse = courses.find((c) => c.id === selectedCourseId)
+  const newIncidentsCount = filteredIncidents.filter((inc) => inc.status === "Open").length
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#F1F5F9]">
-      <PremiumSidebar />
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+      className="flex h-screen overflow-hidden bg-slate-50 font-sans"
+    >
+      <PremiumSidebar 
+        newIncidentsCount={newIncidentsCount} 
+        onExportClick={() => setIsExportModalOpen(true)}
+      />
       <div className="lg:ml-64 flex flex-1 flex-col overflow-hidden">
-        <HeaderWithWeather courseName={selectedCourse?.name || "Tous les parcours"} />
+        <HeaderWithWeather 
+          courseName={
+            selectedCourseId === "all" 
+              ? "État Global du Domaine" 
+              : selectedCourse?.name || "Tous les parcours"
+          } 
+        />
         
-        {/* Top Navigation avec sélecteur de parcours */}
+        {/* Top Navigation */}
         <div className="border-b border-slate-200 bg-white shadow-sm px-8 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <Select value={selectedCourseId} onValueChange={setSelectedCourseId}>
                 <SelectTrigger className="w-[280px] border-2 border-slate-300 bg-white text-slate-900 shadow-sm hover:border-[#064e3b]/30 focus:border-[#064e3b]">
@@ -331,211 +348,221 @@ export default function DashboardPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Filtre de Priorité */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-600">Priorité:</span>
+              <Select value={selectedPriority} onValueChange={(v) => setSelectedPriority(v as Priority | "all")}>
+                <SelectTrigger className="w-[160px] border-2 border-slate-300 bg-white text-slate-900 shadow-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Toutes</SelectItem>
+                  <SelectItem value="Critical">
+                    <div className="flex items-center gap-2">
+                      <PriorityBadge priority="Critical" />
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="High">
+                    <div className="flex items-center gap-2">
+                      <PriorityBadge priority="High" />
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="Medium">
+                    <div className="flex items-center gap-2">
+                      <PriorityBadge priority="Medium" />
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="Low">
+                    <div className="flex items-center gap-2">
+                      <PriorityBadge priority="Low" />
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
-          {/* Main Content */}
-          <main className="flex-1 overflow-y-auto">
-            <div className="mx-auto max-w-7xl p-8">
-              {/* Stats Cards avec Jauges */}
-              {loading ? (
-                <div className="mb-8 grid gap-4 md:grid-cols-3">
-                  <Skeleton className="h-32 w-full" />
-                  <Skeleton className="h-32 w-full" />
-                  <Skeleton className="h-32 w-full" />
-                </div>
-              ) : error ? (
-                <div className="mb-8 rounded-lg border border-slate-200 bg-white p-6 shadow-xl">
-                  <p className="text-sm text-[#475569]">{error}</p>
-                </div>
-              ) : (
-                <div className="mb-8 grid gap-4 md:grid-cols-3">
-                  <GaugeStatCard
-                    title="Santé du Parcours"
-                    value={stats.activeIncidents}
-                    max={selectedCourse?.hole_count || 18}
-                    icon={Activity}
-                    gaugeType="circular"
-                    color="#064e3b"
-                    description={`${(selectedCourse?.hole_count || 18) - stats.activeIncidents} trous parfaits`}
+        <div className="flex-1 overflow-y-auto">
+          <div className="w-full px-8 py-6">
+            {/* KPI Header - 3 Cards */}
+            <div className="mb-6 grid gap-4 md:grid-cols-3">
+              {/* Carte 1: Santé du Parcours */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+              >
+                <p className="mb-4 text-sm font-medium text-slate-600">Santé du Parcours</p>
+                {loading ? (
+                  <Skeleton className="h-24 w-full" />
+                ) : (
+                  <CourseHealthGauge
+                    operationalPercentage={stats.operationalPercentage}
+                    operationalHoles={stats.operationalHoles}
+                    totalHoles={stats.totalHoles}
                   />
-                  <GaugeStatCard
-                    title="Urgences"
-                    value={stats.urgentIncidents}
-                    max={stats.activeIncidents || 1}
-                    icon={AlertTriangle}
-                    gaugeType="sparkline"
-                    sparklineData={weeklyData}
-                    color="#E0115F"
-                    description="Nécessitent une attention immédiate"
-                  />
-                  <GaugeStatCard
-                    title="Résolus (24h)"
-                    value={stats.resolutionRate}
-                    max={100}
-                    icon={TrendingUp}
-                    gaugeType="circular"
-                    color="#D4AF37"
-                    description="Taux de résolution"
-                  />
-                </div>
-              )}
+                )}
+              </motion.div>
 
-              {/* Navigation par Onglets */}
-              {selectedCourseId !== "all" && selectedCourse && (
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
-                  <TabsList>
-                    <TabsTrigger value="overview">Vue d&apos;ensemble</TabsTrigger>
-                    <TabsTrigger value="outgoing">
-                      Aller : Trous 1-{Math.ceil(selectedCourse.hole_count / 2)}
-                    </TabsTrigger>
-                    <TabsTrigger value="returning">
-                      Retour : Trous {Math.ceil(selectedCourse.hole_count / 2) + 1}-{selectedCourse.hole_count}
-                    </TabsTrigger>
-                  </TabsList>
-
-                  {/* Vue d'ensemble */}
-                  <TabsContent value="overview" className="space-y-6">
-                    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
-                      <h2 className="mb-4 text-lg font-semibold text-[#064e3b]">
-                        Vue d&apos;ensemble - {selectedCourse.name}
-                      </h2>
-                      <HoleGrid
-                        holes={holesData}
-                        maxHoles={selectedCourse.hole_count}
-                        onHoleClick={handleHoleClick}
-                      />
+              {/* Carte 2: Alertes Actives */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1, duration: 0.4 }}
+                className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+              >
+                <p className="mb-4 text-sm font-medium text-slate-600">Alertes Actives</p>
+                {loading ? (
+                  <Skeleton className="h-24 w-full" />
+                ) : stats.newIncidents > 0 ? (
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-50">
+                      <AlertCircle className="h-8 w-8 text-red-600" />
                     </div>
-                  </TabsContent>
-
-                  <TabsContent value="outgoing" className="space-y-6">
-                    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
-                      <h2 className="mb-4 text-lg font-semibold text-[#064e3b]">
-                        Aller : Trous 1-{Math.ceil(selectedCourse.hole_count / 2)}
-                      </h2>
-                      <HoleGrid
-                        holes={holesData.slice(0, Math.ceil(selectedCourse.hole_count / 2))}
-                        maxHoles={Math.ceil(selectedCourse.hole_count / 2)}
-                        onHoleClick={handleHoleClick}
-                      />
+                    <div>
+                      <p className="text-3xl font-bold text-red-600">{stats.newIncidents}</p>
+                      <p className="text-sm text-slate-600">Incidents nouveaux</p>
                     </div>
-                  </TabsContent>
-
-                  <TabsContent value="returning" className="space-y-6">
-                    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
-                      <h2 className="mb-4 text-lg font-semibold text-[#064e3b]">
-                        Retour : Trous {Math.ceil(selectedCourse.hole_count / 2) + 1}-{selectedCourse.hole_count}
-                      </h2>
-                      <HoleGrid
-                        holes={holesData.slice(Math.ceil(selectedCourse.hole_count / 2))}
-                        maxHoles={selectedCourse.hole_count - Math.ceil(selectedCourse.hole_count / 2)}
-                        onHoleClick={handleHoleClick}
-                      />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50">
+                      <CheckCircle2 className="h-8 w-8 text-emerald-600" />
                     </div>
-                  </TabsContent>
-                </Tabs>
-              )}
+                    <div>
+                      <p className="text-sm font-medium text-emerald-600">Aucune urgence</p>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
 
-              {/* Filtres */}
-              <div className="mb-6 rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
+              {/* Carte 3: Activité WhatsApp */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2, duration: 0.4 }}
+                className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+              >
+                <p className="mb-4 text-sm font-medium text-slate-600">Activité WhatsApp</p>
+                {loading ? (
+                  <Skeleton className="h-24 w-full" />
+                ) : (
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-50">
+                      <ImageIcon className="h-8 w-8 text-slate-600" />
+                    </div>
+                    <div>
+                      <p className="text-3xl font-bold text-slate-900">{stats.photos24h}</p>
+                      <p className="text-sm text-slate-600">Photos reçues (24h)</p>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            </div>
+
+            {/* Main Grid - 2 Columns */}
+            <div className="grid grid-cols-12 gap-6">
+              {/* Colonne Gauche - Flux d'incidents (span 8) */}
+              <div className="col-span-12 lg:col-span-8">
                 <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-[#1E293B]">Filtres</h3>
-                </div>
-                <div className="space-y-4">
-                  <SegmentControl
-                    options={[
-                      { value: "all", label: "Tous" },
-                      { value: "urgent", label: "Urgents" },
-                      { value: "in_progress", label: "En cours" },
-                      { value: "resolved", label: "Résolus" },
-                    ]}
-                    value={statusFilter}
-                    onValueChange={(value) => setStatusFilter(value as StatusFilter)}
-                  />
-                </div>
-              </div>
-
-              {/* Liste des incidents */}
-              <div>
-                <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-[#E2E8F0] pb-4">
-                  <h2 className="text-xl font-semibold tracking-tight text-[#0F172A]">
-                    Flux d&apos;incidents
+                  <h2 className="text-lg font-semibold text-slate-900">
+                    Flux Terrain
                   </h2>
-                  <span className="text-sm text-[#475569]">
+                  <span className="text-sm text-slate-500">
                     {filteredIncidents.length} incident{filteredIncidents.length > 1 ? "s" : ""}
                   </span>
                 </div>
 
                 {loading ? (
-                  <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                    {Array.from({ length: 6 }).map((_, i) => (
-                      <Skeleton key={i} className="h-64 w-full" />
+                  <div className="space-y-4">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Skeleton key={i} className="h-32 w-full" />
                     ))}
                   </div>
                 ) : error ? (
-                  <div className="flex flex-col items-center justify-center py-12">
-                    <AlertTriangle className="mb-4 h-12 w-12 text-[#475569]" />
-                    <p className="text-sm text-[#475569]">{error}</p>
-                    <Button
-                      onClick={() => {
-                        setError(null)
-                        fetchIncidents()
-                        fetchStats()
-                      }}
-                      className="mt-4 bg-gradient-to-r from-emerald-900 to-emerald-800 text-white hover:from-emerald-800 hover:to-emerald-700 border border-emerald-900/20 shadow-md"
-                    >
-                      Réessayer
-                    </Button>
+                  <div className="rounded-xl border border-slate-200 bg-white p-6 text-center">
+                    <p className="text-sm text-slate-600">{error}</p>
                   </div>
                 ) : filteredIncidents.length === 0 ? (
-                  <TrophyEmptyState courseName={selectedCourse?.name} />
+                  <div className="rounded-xl border border-slate-200 bg-white p-12 text-center">
+                    <p className="text-sm text-slate-500">Aucun incident pour le moment</p>
+                  </div>
                 ) : (
-                  <AnimatePresence mode="popLayout">
-                    <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                      {filteredIncidents.map((incident, index) => (
-                        <motion.div
-                          key={incident.id}
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.95 }}
-                          transition={{ delay: index * 0.05 }}
-                        >
-                          <PremiumIncidentCard
-                            id={incident.id}
-                            holeNumber={incident.hole_number}
-                            category={incident.category}
-                            description={incident.description}
-                            photoUrl={incident.photo_url}
-                            priority={incident.priority}
-                            createdAt={new Date(incident.created_at)}
-                            onViewDetails={() => handleViewDetails(incident)}
-                          />
-                        </motion.div>
-                      ))}
-                    </div>
-                  </AnimatePresence>
+                  <div className="space-y-4">
+                    {filteredIncidents.map((incident, index) => (
+                      <motion.div
+                        key={incident.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.05, duration: 0.3 }}
+                      >
+                        <IncidentFlowCardWide
+                          incident={incident}
+                          onClick={() => handleIncidentClick(incident)}
+                          onTreat={() => handleTreat(incident)}
+                          onArchive={() => handleArchive(incident)}
+                          onUrgent={() => handleUrgent(incident)}
+                          courseName={
+                            selectedCourseId === "all"
+                              ? courses.find((c) => c.id === incident.course_id)?.name
+                              : undefined
+                          }
+                        />
+                      </motion.div>
+                    ))}
+                  </div>
                 )}
               </div>
-            </div>
-          </main>
 
-          {/* Right Panel - Live Activity */}
-          <div className="hidden lg:block w-80 border-l border-slate-200 bg-[#F1F5F9] p-6">
-            <LiveActivityPanel recentIncidents={recentIncidents} />
+              {/* Colonne Droite - Contrôle et Export (span 4) */}
+              <div className="col-span-12 lg:col-span-4 space-y-6">
+                {/* Vue interactive des trous */}
+                {selectedCourseId === "all" ? (
+                  <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <h3 className="mb-4 text-sm font-semibold text-slate-900">
+                      État des Parcours
+                    </h3>
+                    <div className="max-h-[600px] overflow-y-auto">
+                      <MultiCourseGrid
+                        courses={courses}
+                        incidents={filteredIncidents}
+                        onHoleClick={handleHoleClick}
+                      />
+                    </div>
+                  </div>
+                ) : selectedCourse ? (
+                  <HoleStatusGrid
+                    totalHoles={selectedCourse.hole_count}
+                    incidents={filteredIncidents}
+                    onHoleClick={(holeNumber) => handleHoleClick(holeNumber)}
+                  />
+                ) : null}
+
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Modals */}
-      <IncidentDetailsSheet
+      {/* Incident Drawer */}
+      <IncidentDrawer
         incident={selectedIncident}
-        open={isSheetOpen}
-        onOpenChange={setIsSheetOpen}
-        onResolve={handleResolve}
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        onSaveNote={handleSaveNote}
+      />
+
+      {/* Export Modal */}
+      <ExportModal
+        open={isExportModalOpen}
+        onOpenChange={setIsExportModalOpen}
+        courses={courses}
+        clubName={selectedCourse?.name || "TerrainSync"}
       />
 
       <Toaster />
-    </div>
+    </motion.div>
   )
 }

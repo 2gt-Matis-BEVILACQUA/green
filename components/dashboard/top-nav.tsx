@@ -1,5 +1,7 @@
 "use client"
 
+import Image from "next/image"
+import Link from "next/link"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Plus } from "lucide-react"
@@ -22,12 +24,18 @@ export function TopNav({ selectedCourseId, onCourseChange, onSimulate }: TopNavP
   return (
     <div className="glass sticky top-0 z-40 flex h-16 items-center justify-between border-b border-gray-200/50 bg-white/70 backdrop-blur-md px-6">
       <div className="flex items-center gap-6">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-[#064e3b]"></div>
-          <span className="text-lg font-semibold tracking-tight text-[#000000]">
-            GreenLog OS
-          </span>
-        </div>
+        <Link href="/" className="flex items-center justify-center">
+          <div className="relative h-16 w-16 flex items-center justify-center">
+            <Image
+              src="/logo.png"
+              alt="GreenLog OS"
+              width={64}
+              height={64}
+              className="object-contain"
+              priority
+            />
+          </div>
+        </Link>
         <div className="h-6 w-px bg-gray-200"></div>
         <Select value={selectedCourseId} onValueChange={onCourseChange}>
           <SelectTrigger className="w-[240px] border-gray-200 bg-white">

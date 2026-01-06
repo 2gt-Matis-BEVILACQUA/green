@@ -9,7 +9,8 @@ import {
 import { IncidentCategory } from "@/lib/types"
 
 /**
- * Gère le flux conversationnel du chatbot
+ * Gère le flux conversationnel du chatbot WhatsApp
+ * Logique stricte : Parcours -> Trou -> Photo/Description -> Confirmation
  */
 export class WhatsAppDialog {
   private session: ChatSession
@@ -26,13 +27,12 @@ export class WhatsAppDialog {
    * Traite le message selon l'état actuel de la session
    */
   async process(): Promise<{ response: string; shouldUpdate: boolean; updates?: ChatSessionUpdate }> {
-    const lowerMessage = this.message.toLowerCase()
+    const lowerMessage = this.message.toLowerCase().trim()
 
-    // Détection de commandes spéciales et messages de démarrage
-    const startKeywords = ["hello", "bonjour", "salut", "hi", "start", "démarrer", "commencer"]
-    if (startKeywords.includes(lowerMessage) || lowerMessage === "reset" || lowerMessage === "annuler" || lowerMessage === "recommencer") {
+    // Gestion de la commande RESET - Vide TOUTES les variables
+    if (lowerMessage === "reset" || lowerMessage === "annuler" || lowerMessage === "recommencer") {
       return {
-        response: "🔄 Session réinitialisée. Sur quel parcours es-tu ?",
+        response: await this.getCourseListMessage(),
         shouldUpdate: true,
         updates: {
           state: "AWAITING_COURSE",
@@ -40,15 +40,27 @@ export class WhatsAppDialog {
           hole_number: null,
           description: null,
           category: null,
+          priority: "Medium",
           photo_url: null,
         },
       }
     }
 
-    // Parsing intelligent : si le message contient toutes les infos, on peut sauter des étapes
-    const hasAllInfo = await this.tryParseCompleteMessage()
-    if (hasAllInfo) {
-      return hasAllInfo
+    // Si la session est complétée, on la réinitialise automatiquement pour un nouveau signalement
+    if (this.session.state === "COMPLETED") {
+      return {
+        response: await this.getCourseListMessage(),
+        shouldUpdate: true,
+        updates: {
+          state: "AWAITING_COURSE",
+          course_id: null,
+          hole_number: null,
+          description: null,
+          category: null,
+          priority: "Medium",
+          photo_url: null,
+        },
+      }
     }
 
     // Traitement selon l'état
@@ -65,103 +77,50 @@ export class WhatsAppDialog {
       case "AWAITING_PHOTO":
         return await this.handlePhoto()
 
-      case "COMPLETED":
-        return {
-          response: "✅ Votre signalement a déjà été enregistré. Tapez 'reset' pour en créer un nouveau.",
-          shouldUpdate: false,
-        }
-
       default:
+        // État invalide, on réinitialise
         return {
-          response: "❌ État de session invalide. Tapez 'reset' pour recommencer.",
-          shouldUpdate: false,
+          response: await this.getCourseListMessage(),
+          shouldUpdate: true,
+          updates: {
+            state: "AWAITING_COURSE",
+            course_id: null,
+            hole_number: null,
+            description: null,
+            category: null,
+            priority: "Medium",
+            photo_url: null,
+          },
         }
     }
   }
 
   /**
-   * Tente de parser un message complet (ex: "Trou 4 sur L'Océan, fuite d'eau")
+   * Génère le message de liste des parcours
    */
-  private async tryParseCompleteMessage(): Promise<
-    { response: string; shouldUpdate: boolean; updates?: ChatSessionUpdate } | null
-  > {
+  private async getCourseListMessage(): Promise<string> {
     const supabase = await createClient()
 
-    // Récupérer les parcours
     const { data: courses } = await supabase
       .from("courses")
-      .select("id, name, hole_count")
+      .select("id, name")
       .eq("club_id", this.session.club_id)
       .eq("is_active", true)
+      .order("name")
 
     if (!courses || courses.length === 0) {
-      return null
+      return "❌ Aucun parcours configuré pour ce club."
     }
 
-    // Extraire le trou
-    const holeNumber = extractHoleNumber(this.message)
-    if (!holeNumber) {
-      return null
-    }
+    const courseList = courses
+      .map((course, index) => `${index + 1}. ${course.name}`)
+      .join("\n")
 
-    // Extraire le parcours
-    const courseId = extractCourseName(this.message, courses) || courses[0].id
-    const selectedCourse = courses.find((c) => c.id === courseId)
-
-    if (!selectedCourse) {
-      return null
-    }
-
-    // Vérifier que le trou est valide
-    if (holeNumber > selectedCourse.hole_count) {
-      return {
-        response: `❌ Le parcours "${selectedCourse.name}" n'a que ${selectedCourse.hole_count} trous. Quel est le bon numéro ?`,
-        shouldUpdate: true,
-        updates: {
-          state: "AWAITING_HOLE",
-          course_id: courseId,
-        },
-      }
-    }
-
-    // Détecter la catégorie
-    const category = detectCategory(this.message)
-    const priority = detectPriority(this.message)
-
-    // Si on a une photo, on peut compléter directement
-    if (this.mediaUrl) {
-      return {
-        response: "✅ Informations complètes reçues ! Enregistrement en cours...",
-        shouldUpdate: true,
-        updates: {
-          state: "AWAITING_PHOTO",
-          course_id: courseId,
-          hole_number: holeNumber,
-          description: this.message,
-          category,
-          priority,
-          photo_url: this.mediaUrl,
-        },
-      }
-    }
-
-    // Sinon, on a besoin de la photo
-    return {
-      response: `✅ Parcours "${selectedCourse.name}", Trou ${holeNumber} détecté.\n\n📸 Envoie une photo de l'incident, ou tape "Fini" pour continuer sans photo.`,
-      shouldUpdate: true,
-      updates: {
-        state: "AWAITING_PHOTO",
-        course_id: courseId,
-        hole_number: holeNumber,
-        description: this.message,
-        category,
-        priority,
-      },
-    }
+    return `Sur quel parcours es-tu ?\n\n${courseList}\n\nRéponds par le numéro (ex: 1, 2, 3) ou le nom du parcours.`
   }
 
   /**
-   * Gère la sélection du parcours
+   * ÉTAPE 1 : Gère la sélection du parcours
    */
   private async handleCourseSelection(): Promise<{
     response: string
@@ -187,16 +146,25 @@ export class WhatsAppDialog {
     // Vérifier si le message contient un numéro (sélection par numéro)
     const numberMatch = this.message.match(/^(\d+)$/)
     if (numberMatch) {
-      const selectedIndex = parseInt(numberMatch[1], 10) - 1
+      const selectedIndex = parseInt(numberMatch[1], 10) - 1 // -1 car la liste commence à 1
+      
+      // CORRECTION BUG : Validation stricte de l'index
       if (selectedIndex >= 0 && selectedIndex < courses.length) {
         const selectedCourse = courses[selectedIndex]
         return {
-          response: `✅ Parcours "${selectedCourse.name}" sélectionné.\n\nQuel numéro de trou ?`,
+          response: `✅ Parcours "${selectedCourse.name}" sélectionné.\n\nSur quel trou es-tu ? (Tapez le numéro de 1 à 18)`,
           shouldUpdate: true,
           updates: {
             state: "AWAITING_HOLE",
             course_id: selectedCourse.id,
+            hole_number: null, // S'assurer que hole_number est null
           },
+        }
+      } else {
+        // Numéro invalide
+        return {
+          response: `❌ Numéro invalide. Veuillez choisir entre 1 et ${courses.length}.\n\n${await this.getCourseListMessage()}`,
+          shouldUpdate: false,
         }
       }
     }
@@ -206,28 +174,25 @@ export class WhatsAppDialog {
     if (courseId) {
       const selectedCourse = courses.find((c) => c.id === courseId)
       return {
-        response: `✅ Parcours "${selectedCourse?.name}" sélectionné.\n\nQuel numéro de trou ?`,
+        response: `✅ Parcours "${selectedCourse?.name}" sélectionné.\n\nSur quel trou es-tu ? (Tapez le numéro de 1 à 18)`,
         shouldUpdate: true,
         updates: {
           state: "AWAITING_HOLE",
           course_id: courseId,
+          hole_number: null, // S'assurer que hole_number est null
         },
       }
     }
 
-    // Afficher la liste des parcours
-    const courseList = courses
-      .map((course, index) => `${index + 1}. ${course.name}`)
-      .join("\n")
-
+    // Message non reconnu, afficher la liste
     return {
-      response: `Bonjour ! Sur quel parcours es-tu ?\n\n${courseList}\n\nRéponds par le numéro ou le nom du parcours.`,
+      response: await this.getCourseListMessage(),
       shouldUpdate: false,
     }
   }
 
   /**
-   * Gère la sélection du trou
+   * ÉTAPE 2 : Gère la sélection du trou (NOUVEAU - étape obligatoire)
    */
   private async handleHoleSelection(): Promise<{
     response: string
@@ -246,7 +211,7 @@ export class WhatsAppDialog {
     // Récupérer les détails du parcours
     const { data: course } = await supabase
       .from("courses")
-      .select("name, hole_count")
+      .select("id, name, hole_count")
       .eq("id", this.session.course_id)
       .single()
 
@@ -257,7 +222,8 @@ export class WhatsAppDialog {
       }
     }
 
-    // Extraire le numéro de trou
+    // CORRECTION BUG : Extraire le numéro de trou depuis le message actuel uniquement
+    // Ne pas utiliser le numéro de l'étape précédente
     const holeNumber = extractHoleNumber(this.message)
 
     if (!holeNumber) {
@@ -275,60 +241,97 @@ export class WhatsAppDialog {
       }
     }
 
+    // Trou valide, passer à l'étape description/photo
     return {
-      response: `✅ Trou ${holeNumber} sélectionné.\n\nDécris-moi le problème en quelques mots.`,
+      response: `✅ Trou ${holeNumber} sélectionné.\n\nDécrivez le problème et envoyez une photo.`,
       shouldUpdate: true,
       updates: {
         state: "AWAITING_DESCRIPTION",
-        hole_number: holeNumber,
+        hole_number: holeNumber, // Enregistrer le trou correctement
       },
     }
   }
 
   /**
-   * Gère la description
+   * ÉTAPE 3 : Gère la description et/ou la photo
    */
   private async handleDescription(): Promise<{
     response: string
     shouldUpdate: boolean
     updates?: ChatSessionUpdate
   }> {
-    if (this.message.length < 3) {
+    if (!this.session.course_id || !this.session.hole_number) {
       return {
-        response: "❌ La description est trop courte. Veuillez décrire le problème en quelques mots.",
+        response: "❌ Erreur : données incomplètes. Tapez 'reset' pour recommencer.",
         shouldUpdate: false,
       }
     }
 
-    const category = detectCategory(this.message)
-    const priority = detectPriority(this.message)
+    // Si une photo est envoyée, on l'enregistre
+    if (this.mediaUrl) {
+      const category = detectCategory(this.message || "")
+      const priority = detectPriority(this.message || "")
 
+      return {
+        response: await this.getConfirmationMessage(),
+        shouldUpdate: true,
+        updates: {
+          state: "COMPLETED",
+          description: this.message || "Photo envoyée",
+          category,
+          priority,
+          photo_url: this.mediaUrl,
+        },
+      }
+    }
+
+    // Si du texte est envoyé (pas de photo), c'est la description
+    if (this.message && this.message.length >= 2) {
+      const category = detectCategory(this.message)
+      const priority = detectPriority(this.message)
+
+      // Passer à l'étape photo (mais accepter aussi "Fini")
+      return {
+        response: `✅ Description enregistrée : "${this.message}"\n\n📸 Envoie une photo si possible, ou tape "Fini" pour terminer.`,
+        shouldUpdate: true,
+        updates: {
+          state: "AWAITING_PHOTO",
+          description: this.message,
+          category,
+          priority,
+        },
+      }
+    }
+
+    // Message trop court ou vide
     return {
-      response: `✅ Description enregistrée.\n\n📸 Envoie une photo de l'incident si possible, ou tape "Fini" pour continuer sans photo.`,
-      shouldUpdate: true,
-      updates: {
-        state: "AWAITING_PHOTO",
-        description: this.message,
-        category,
-        priority,
-      },
+      response: "❌ Veuillez décrire le problème en quelques mots, ou envoyer une photo.",
+      shouldUpdate: false,
     }
   }
 
   /**
-   * Gère la photo
+   * ÉTAPE 4 : Gère la photo ou la fin
    */
   private async handlePhoto(): Promise<{
     response: string
     shouldUpdate: boolean
     updates?: ChatSessionUpdate
   }> {
-    const lowerMessage = this.message.toLowerCase()
+    const lowerMessage = this.message.toLowerCase().trim()
 
-    // Si l'utilisateur dit "Fini" ou "Terminé", on continue sans photo
-    if (lowerMessage === "fini" || lowerMessage === "terminé" || lowerMessage === "pas de photo") {
+    // Si l'utilisateur dit "Fini" ou "Terminé", on complète sans photo
+    if (lowerMessage === "fini" || lowerMessage === "terminé" || lowerMessage === "pas de photo" || lowerMessage === "ok") {
+      // S'assurer qu'on a au moins une description
+      if (!this.session.description) {
+        return {
+          response: "❌ Veuillez d'abord décrire le problème en quelques mots.",
+          shouldUpdate: false,
+        }
+      }
+
       return {
-        response: "✅ Signalement enregistré et visible sur le Dashboard. Merci !",
+        response: await this.getConfirmationMessage(),
         shouldUpdate: true,
         updates: {
           state: "COMPLETED",
@@ -336,24 +339,62 @@ export class WhatsAppDialog {
       }
     }
 
-    // Si une photo est fournie, on la stocke temporairement (URL Twilio)
-    // Elle sera uploadée vers Supabase lors de la finalisation
+    // Si une photo est fournie, on la stocke et on complète
     if (this.mediaUrl) {
       return {
-        response: "✅ Photo reçue ! Enregistrement en cours...",
+        response: await this.getConfirmationMessage(),
         shouldUpdate: true,
         updates: {
           state: "COMPLETED",
-          photo_url: this.mediaUrl, // URL Twilio temporaire, sera uploadée lors de la finalisation
+          photo_url: this.mediaUrl,
         },
       }
     }
 
-    // Sinon, demander la photo
+    // Si du texte est envoyé (pas "Fini"), on l'ajoute à la description
+    if (this.message && this.message.length >= 2) {
+      const existingDescription = this.session.description || ""
+      const newDescription = existingDescription
+        ? `${existingDescription}. ${this.message}`
+        : this.message
+
+      const category = detectCategory(newDescription)
+      const priority = detectPriority(newDescription)
+
+      return {
+        response: `✅ Description mise à jour.\n\n📸 Envoie une photo si possible, ou tape "Fini" pour terminer.`,
+        shouldUpdate: true,
+        updates: {
+          description: newDescription,
+          category,
+          priority,
+        },
+      }
+    }
+
+    // Sinon, demander la photo ou "Fini"
     return {
-      response: '📸 Envoie une photo de l\'incident, ou tape "Fini" pour continuer sans photo.',
+      response: '📸 Envoie une photo de l\'incident, ou tape "Fini" pour terminer.',
       shouldUpdate: false,
     }
   }
-}
 
+  /**
+   * Génère le message de confirmation avant de compléter
+   */
+  private async getConfirmationMessage(): Promise<string> {
+    const supabase = await createClient()
+
+    // Récupérer le nom du parcours
+    const { data: course } = await supabase
+      .from("courses")
+      .select("name")
+      .eq("id", this.session.course_id)
+      .single()
+
+    const courseName = course?.name || "Parcours"
+    const holeNumber = this.session.hole_number || "?"
+
+    return `✅ Signalé : ${courseName} - Trou ${holeNumber}. C'est bien reçu !`
+  }
+}

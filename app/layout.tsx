@@ -5,8 +5,12 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "GreenLog OS - Dashboard de Maintenance Golf",
-  description: "Plateforme SaaS de gestion d'incidents pour les golfs",
+  title: "TerrainSync - Maintenance Terrain Synchronisée",
+  description: "La maintenance terrain, synchronisée par l'intelligence. Connectez vos équipes mobiles à votre centre de contrôle via WhatsApp.",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({

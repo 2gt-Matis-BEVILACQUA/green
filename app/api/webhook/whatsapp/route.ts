@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { validateTwilioSignature, generateTwiMLResponse } from "@/lib/whatsapp/twilio"
 import { uploadImageToStorage, ensureBucketExists } from "@/lib/whatsapp/storage"
-import { getOrCreateSession, updateSession, completeSession } from "@/lib/whatsapp/session"
+import { getOrCreateSession, updateSession, completeSession, resetSession } from "@/lib/whatsapp/session"
 import { WhatsAppDialog } from "@/lib/whatsapp/dialog"
 import { IncidentCategory } from "@/lib/types"
 
@@ -297,8 +297,11 @@ export async function POST(request: Request) {
       // Marquer la session comme complétée
       await completeSession(session.id, incident.id)
 
-      // Message de confirmation final
-      const confirmationMessage = `✅ Signalement enregistré au Trou ${updatedSession.hole_number} sur ${courseData.name}.\n\nVisible sur le Dashboard. Merci !`
+      // Message de confirmation final (déjà généré par le dialog)
+      const confirmationMessage = dialogResult.response
+
+      // Réinitialiser automatiquement la session pour permettre un nouveau signalement immédiat
+      await resetSession(fromNumber, clubId)
 
       return new NextResponse(generateTwiMLResponse(confirmationMessage), {
         status: 200,
