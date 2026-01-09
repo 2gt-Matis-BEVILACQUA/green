@@ -244,6 +244,10 @@ export async function POST(request: Request) {
         updatedSession.hole_number <= Math.ceil(courseData.hole_count / 2) ? "Aller" : "Retour"
 
       // Créer l'incident
+      // Nettoyer le numéro de téléphone pour éviter les problèmes de taille
+      // Twilio envoie parfois "whatsapp:+33612345678", on garde juste le numéro
+      const cleanPhoneNumber = fromNumber.replace("whatsapp:", "").substring(0, 50)
+      
       const { data: incident, error: insertError } = await supabase
         .from("incidents")
         .insert({
@@ -255,7 +259,7 @@ export async function POST(request: Request) {
           description: updatedSession.description,
           priority: updatedSession.priority || "Medium",
           status: "Open",
-          reported_by: fromNumber,
+          reported_by: cleanPhoneNumber,
           photo_url: null, // Sera mis à jour après upload si présent
         })
         .select()

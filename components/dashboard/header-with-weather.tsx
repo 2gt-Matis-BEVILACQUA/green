@@ -1,6 +1,6 @@
 "use client"
 
-import { Clock, Sun, Wind } from "lucide-react"
+import { Clock, Cloud, Wind } from "lucide-react"
 import { useState, useEffect } from "react"
 
 interface HeaderWithWeatherProps {
@@ -20,8 +20,8 @@ export function HeaderWithWeather({ courseName }: HeaderWithWeatherProps) {
 
   // Simuler des données météo (à remplacer par une API réelle)
   const weather = {
-    temperature: 18,
-    wind: 12,
+    temperature: 6,
+    wind: 28,
   }
 
   return (
@@ -47,17 +47,17 @@ export function HeaderWithWeather({ courseName }: HeaderWithWeatherProps) {
         </div>
 
         {/* Météo */}
-        <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-2 shadow-sm">
+        <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 shadow-sm">
           <div className="flex items-center gap-2">
-            <Sun className="h-4 w-4 text-[#D4AF37]" />
-            <span className="text-sm font-medium text-[#1E293B]">
+            <Cloud className="h-4 w-4 text-slate-500" />
+            <span className="text-sm font-medium text-slate-700">
               {weather.temperature}°C
             </span>
           </div>
-          <div className="h-4 w-px bg-slate-200"></div>
+          <div className="h-4 w-px bg-slate-300"></div>
           <div className="flex items-center gap-2">
-            <Wind className="h-4 w-4 text-slate-500" />
-            <span className="text-sm font-medium text-slate-600">
+            <Wind className="h-4 w-4 text-slate-600" />
+            <span className="text-sm font-medium text-slate-700">
               {weather.wind} km/h
             </span>
           </div>

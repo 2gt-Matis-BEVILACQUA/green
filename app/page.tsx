@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
-import { motion } from "framer-motion"
+import { useEffect, useState, useMemo, useCallback } from "react"
+import { motion, AnimatePresence } from "framer-motion"
 import { PremiumSidebar } from "@/components/dashboard/premium-sidebar"
 import { HeaderWithWeather } from "@/components/dashboard/header-with-weather"
 import { CourseHealthGauge } from "@/components/dashboard/course-health-gauge"
@@ -12,13 +12,16 @@ import { IncidentDrawer } from "@/components/dashboard/incident-drawer"
 import { PriorityBadge } from "@/components/dashboard/priority-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/toaster"
 import { useToast } from "@/components/ui/use-toast"
 import { AlertCircle, CheckCircle2, Image as ImageIcon } from "lucide-react"
 import { ExportModal } from "@/components/dashboard/export-modal"
+import { IncidentCharts } from "@/components/dashboard/incident-charts"
 import { createClient } from "@/lib/supabase/client"
 import { Incident, Course, Priority } from "@/lib/types"
 import confetti from "canvas-confetti"
+import { ChartBarIcon, ChevronDown } from "lucide-react"
 
 export default function DashboardPage() {
   const [incidents, setIncidents] = useState<Incident[]>([])
@@ -29,6 +32,7 @@ export default function DashboardPage() {
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [isExportModalOpen, setIsExportModalOpen] = useState(false)
+  const [showAdvancedAnalysis, setShowAdvancedAnalysis] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { toast } = useToast()
@@ -133,14 +137,36 @@ export default function DashboardPage() {
         new Date(inc.created_at) >= yesterday
     ).length
 
+    // Temps de résolution moyen (en heures)
+    const resolvedIncidents = incidents.filter((inc) => inc.status === "Resolved" && inc.resolved_at)
+    let avgResolutionTime: string | null = null
+    
+    if (resolvedIncidents.length > 0) {
+      const totalMinutes = resolvedIncidents.reduce((sum, inc) => {
+        if (inc.resolved_at) {
+          const created = new Date(inc.created_at).getTime()
+          const resolved = new Date(inc.resolved_at).getTime()
+          const diffMinutes = (resolved - created) / (1000 * 60)
+          return sum + diffMinutes
+        }
+        return sum
+      }, 0)
+      
+      const avgMinutes = totalMinutes / resolvedIncidents.length
+      const hours = Math.floor(avgMinutes / 60)
+      const minutes = Math.round(avgMinutes % 60)
+      avgResolutionTime = `${hours}h${minutes.toString().padStart(2, "0")}`
+    }
+
     return {
       operationalPercentage,
       operationalHoles,
       totalHoles,
       newIncidents: newIncidents.length,
       photos24h,
+      avgResolutionTime,
     }
-  }, [filteredIncidents, courses, selectedCourseId])
+  }, [filteredIncidents, incidents, courses, selectedCourseId])
 
   const fetchCourses = async () => {
     try {
@@ -276,7 +302,7 @@ export default function DashboardPage() {
     }
   }
 
-  const handleSaveNote = async (incidentId: string, note: string) => {
+  const handleSaveNote = useCallback(async (incidentId: string, note: string) => {
     try {
       const response = await fetch(`/api/incidents/${incidentId}/note`, {
         method: "PATCH",
@@ -299,7 +325,7 @@ export default function DashboardPage() {
     } catch (error) {
       // Erreur silencieuse pour la sauvegarde auto
     }
-  }
+  }, [])
 
   const selectedCourse = courses.find((c) => c.id === selectedCourseId)
   const newIncidentsCount = filteredIncidents.filter((inc) => inc.status === "Open").length
@@ -380,6 +406,20 @@ export default function DashboardPage() {
                   </SelectItem>
                 </SelectContent>
               </Select>
+              
+              {/* Bouton Analyse Avancée */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAdvancedAnalysis(!showAdvancedAnalysis)}
+                className="ml-2 flex items-center gap-2 border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-[#064e3b]/30"
+              >
+                <ChartBarIcon className="h-4 w-4" />
+                <span className="text-sm font-medium">Analyse Avancée</span>
+                <ChevronDown 
+                  className={`h-4 w-4 transition-transform duration-200 ${showAdvancedAnalysis ? 'rotate-180' : ''}`} 
+                />
+              </Button>
             </div>
           </div>
         </div>
@@ -461,6 +501,24 @@ export default function DashboardPage() {
                 )}
               </motion.div>
             </div>
+
+            {/* Section Analyse Avancée - Escamotable */}
+            <AnimatePresence>
+              {showAdvancedAnalysis && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  animate={{ opacity: 1, height: "auto", marginBottom: 24 }}
+                  exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+                  className="overflow-hidden"
+                >
+                  <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <h3 className="mb-4 text-lg font-semibold text-slate-900">Analyses Détaillées</h3>
+                    <IncidentCharts incidents={incidents} courses={courses} />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Main Grid - 2 Columns */}
             <div className="grid grid-cols-12 gap-6">
@@ -552,6 +610,9 @@ export default function DashboardPage() {
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         onSaveNote={handleSaveNote}
+        onPhotoUploaded={() => {
+          fetchIncidents()
+        }}
       />
 
       {/* Export Modal */}
@@ -561,7 +622,6 @@ export default function DashboardPage() {
         courses={courses}
         clubName={selectedCourse?.name || "TerrainSync"}
       />
-
       <Toaster />
     </motion.div>
   )

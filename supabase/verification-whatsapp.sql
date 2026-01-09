@@ -137,6 +137,9 @@ BEGIN
   IF NOT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'incidents' AND column_name = 'reported_by') THEN
     missing_columns := array_append(missing_columns, 'reported_by');
   END IF;
+  IF NOT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'incidents' AND column_name = 'loop') THEN
+    missing_columns := array_append(missing_columns, 'loop');
+  END IF;
   
   -- Vérifier la colonne internal_note (optionnelle mais recommandée)
   IF NOT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'incidents' AND column_name = 'internal_note') THEN

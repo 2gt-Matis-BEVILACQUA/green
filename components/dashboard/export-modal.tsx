@@ -50,11 +50,23 @@ export function ExportModal({ open, onOpenChange, courses, clubName = "TerrainSy
     if (saved) {
       try {
         const parsed = JSON.parse(saved)
-        // S'assurer que chaque entrée a un tableau courses valide
+        // S'assurer que chaque entrée a un tableau courses valide et mettre à jour le nom
         const validated = parsed.map((entry: any) => ({
           ...entry,
           courses: Array.isArray(entry.courses) ? entry.courses : ["Tous les parcours"],
+          // Mettre à jour "Alain Egloff" vers "Matis Bevilacqua" dans les anciennes entrées
+          generatedBy: entry.generatedBy === "Alain Egloff" ? "Matis Bevilacqua" : entry.generatedBy,
         }))
+        
+        // Si des entrées ont été modifiées, sauvegarder
+        const hasChanges = parsed.some((entry: any, index: number) => 
+          entry.generatedBy === "Alain Egloff" && validated[index].generatedBy === "Matis Bevilacqua"
+        )
+        
+        if (hasChanges) {
+          localStorage.setItem("exportHistory", JSON.stringify(validated))
+        }
+        
         setExportHistory(validated)
       } catch (e) {
         // Ignore
@@ -148,7 +160,7 @@ export function ExportModal({ open, onOpenChange, courses, clubName = "TerrainSy
       period,
       courses: selectedCourses.length > 0 ? selectedCourses : ["Tous les parcours"],
       generatedAt: new Date().toISOString(),
-      generatedBy: "Alain Egloff",
+      generatedBy: "Matis Bevilacqua",
     }
     const updated = [newEntry, ...exportHistory].slice(0, 10)
     setExportHistory(updated)
@@ -301,10 +313,10 @@ export function ExportModal({ open, onOpenChange, courses, clubName = "TerrainSy
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative mx-auto w-full max-w-2xl bg-white shadow-2xl"
+            className="relative mx-auto w-full max-w-2xl bg-white shadow-2xl overflow-x-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="max-h-[90vh] overflow-y-auto">
+            <div className="max-h-[90vh] overflow-y-auto overflow-x-hidden">
               {/* Header */}
               <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-8 py-6">
                 <div className="flex items-center gap-3">
@@ -325,7 +337,7 @@ export function ExportModal({ open, onOpenChange, courses, clubName = "TerrainSy
                 </button>
               </div>
 
-              <div className="px-8 py-6 space-y-8">
+              <div className="px-8 py-6 space-y-8 overflow-x-hidden">
                 {/* Période */}
                 <div>
                   <div className="mb-4 flex items-center gap-2">
@@ -532,41 +544,45 @@ export function ExportModal({ open, onOpenChange, courses, clubName = "TerrainSy
                 </AnimatePresence>
 
                 {/* Boutons d'export */}
-                <div className="flex gap-4 pt-4">
+                <div className="flex gap-4 pt-4 overflow-x-hidden">
                   <Button
                     onClick={handleExportPDF}
                     disabled={isGenerating || !hasSelection}
-                    className="flex-1 bg-[#0F172A] text-white hover:bg-[#1E293B] shadow-lg disabled:opacity-50"
+                    className="flex-1 min-w-0 bg-[#0F172A] text-white hover:bg-[#1E293B] shadow-lg disabled:opacity-50"
                   >
-                    {isGenerating ? (
-                      <>
-                        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                        Génération du rapport de direction en cours... {Math.round(progress)}%
-                      </>
-                    ) : (
-                      <>
-                        <Download className="mr-2 h-4 w-4" />
-                        PDF (Rapport de Direction)
-                      </>
-                    )}
+                    <span className="flex items-center justify-center min-w-0">
+                      {isGenerating ? (
+                        <>
+                          <div className="mr-2 h-4 w-4 flex-shrink-0 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                          <span className="truncate">Génération... {Math.round(progress)}%</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="mr-2 h-4 w-4 flex-shrink-0" />
+                          <span className="truncate">PDF (Rapport de Direction)</span>
+                        </>
+                      )}
+                    </span>
                   </Button>
                   <Button
                     onClick={handleExportExcel}
                     disabled={isGenerating || !hasSelection}
                     variant="outline"
-                    className="flex-1 border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    className="flex-1 min-w-0 border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                   >
-                    {isGenerating ? (
-                      <>
-                        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
-                        Préparation du tableau Excel... {Math.round(progress)}%
-                      </>
-                    ) : (
-                      <>
-                        <Table2 className="mr-2 h-4 w-4 text-emerald-600" />
-                        Export Excel (Tableur)
-                      </>
-                    )}
+                    <span className="flex items-center justify-center min-w-0">
+                      {isGenerating ? (
+                        <>
+                          <div className="mr-2 h-4 w-4 flex-shrink-0 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                          <span className="truncate">Préparation... {Math.round(progress)}%</span>
+                        </>
+                      ) : (
+                        <>
+                          <Table2 className="mr-2 h-4 w-4 text-emerald-600 flex-shrink-0" />
+                          <span className="truncate">Export Excel (Tableur)</span>
+                        </>
+                      )}
+                    </span>
                   </Button>
                 </div>
 

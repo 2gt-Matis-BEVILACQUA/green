@@ -29,7 +29,8 @@ export function PremiumSidebar({ newIncidentsCount = 0, onExportClick }: Premium
           <img
             src="/logo.png"
             alt="TerrainSync"
-            className="w-full max-w-[160px] h-auto object-contain brightness-110"
+            className="w-full max-w-[180px] h-auto object-contain brightness-110 drop-shadow-sm"
+            style={{ aspectRatio: "auto" }}
           />
         </Link>
       </div>
@@ -91,7 +92,7 @@ export function PremiumSidebar({ newIncidentsCount = 0, onExportClick }: Premium
             <User className="h-5 w-5 text-slate-300" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">Alain Egloff</p>
+            <p className="text-sm font-medium text-white truncate">Matis Bevilacqua</p>
             <p className="text-xs text-slate-400 truncate">Directeur</p>
           </div>
         </div>

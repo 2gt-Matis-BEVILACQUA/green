@@ -156,10 +156,6 @@ export default function HistoryPage() {
 
   // Pagination
   const totalPages = Math.ceil(filteredIncidents.length / ITEMS_PER_PAGE)
-  const paginatedIncidents = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE
-    return filteredIncidents.slice(start, start + ITEMS_PER_PAGE)
-  }, [filteredIncidents, currentPage])
 
   const handleViewDetails = (incident: Incident) => {
     setSelectedIncident(incident)
@@ -187,6 +183,26 @@ export default function HistoryPage() {
   const priorities: Priority[] = ["Critical", "High", "Medium", "Low"]
   const selectedCourse = courses.find((c) => c.id === selectedCourseId)
   const holes = selectedCourse ? Array.from({ length: selectedCourse.hole_count }, (_, i) => i + 1) : []
+
+  // Enrichir les incidents avec le nom du parcours
+  const enrichedIncidents = useMemo(() => {
+    return filteredIncidents.map((incident) => {
+      const course = courses.find((c) => c.id === incident.course_id)
+      return {
+        ...incident,
+        courseName: course?.name || "N/A",
+      }
+    })
+  }, [filteredIncidents, courses])
+
+  // Utiliser les incidents enrichis pour la pagination
+  const paginatedIncidentsEnriched = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE
+    return enrichedIncidents.slice(start, start + ITEMS_PER_PAGE)
+  }, [enrichedIncidents, currentPage])
+
+  // Déterminer si la colonne Parcours doit être affichée
+  const showCourseColumn = selectedCourseId === "all"
 
   return (
     <motion.div
@@ -376,7 +392,7 @@ export default function HistoryPage() {
                     Réessayer
                   </Button>
                 </div>
-              ) : paginatedIncidents.length === 0 ? (
+              ) : paginatedIncidentsEnriched.length === 0 ? (
                 <div className="p-12 text-center">
                   <p className="text-sm font-medium text-slate-900">Aucun incident trouvé</p>
                   <p className="mt-1 text-sm text-slate-500">
@@ -392,6 +408,7 @@ export default function HistoryPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Date</TableHead>
+                          {showCourseColumn && <TableHead>Parcours</TableHead>}
                           <TableHead>Trou</TableHead>
                           <TableHead>Catégorie</TableHead>
                           <TableHead>Priorité</TableHead>
@@ -400,7 +417,7 @@ export default function HistoryPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {paginatedIncidents.map((incident, index) => {
+                        {paginatedIncidentsEnriched.map((incident, index) => {
                           const resolvedDate = incident.resolved_at
                             ? new Date(incident.resolved_at)
                             : new Date(incident.created_at)
@@ -420,6 +437,13 @@ export default function HistoryPage() {
                                   {format(resolvedDate, "HH:mm", { locale: fr })}
                                 </span>
                               </TableCell>
+                              {showCourseColumn && (
+                                <TableCell>
+                                  <span className="font-semibold text-slate-900">
+                                    {incident.courseName}
+                                  </span>
+                                </TableCell>
+                              )}
                               <TableCell>
                                 <span className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-2.5 py-1 text-sm font-bold text-white">
                                   {incident.hole_number}

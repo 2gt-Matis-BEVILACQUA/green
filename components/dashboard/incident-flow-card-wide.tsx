@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { motion } from "framer-motion"
 import Image from "next/image"
 import { Clock } from "lucide-react"
@@ -7,6 +8,7 @@ import { Incident } from "@/lib/types"
 import { formatTimeAgo } from "@/lib/utils"
 import { IncidentActionMenu } from "./incident-action-menu"
 import { PriorityBadge } from "./priority-badge"
+import { PhotoModal } from "./photo-modal"
 
 interface IncidentFlowCardWideProps {
   incident: Incident
@@ -25,34 +27,44 @@ export function IncidentFlowCardWide({
   onUrgent,
   courseName,
 }: IncidentFlowCardWideProps) {
-  const isNew = incident.status === "Open"
-  const statusColor = isNew ? "bg-red-500" : "bg-amber-500"
+  const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false)
+  // const isNew = incident.status === "Open"
+  // const statusColor = isNew ? "bg-red-500" : "bg-amber-500"
+
+  const handlePhotoClick = (e: React.MouseEvent) => {
+    e.stopPropagation() // Empêcher l'ouverture du drawer
+    if (incident.photo_url) {
+      setIsPhotoModalOpen(true)
+    }
+  }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -2 }}
-      transition={{ duration: 0.2 }}
-      onClick={onClick}
-      className="group cursor-pointer rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 hover:shadow-xl"
-    >
-      <div className="flex items-center gap-4">
-        {/* Photo - Left */}
-        {incident.photo_url ? (
-          <div className="relative h-[120px] w-[120px] flex-shrink-0 overflow-hidden rounded-lg bg-slate-100">
-            <Image
-              src={incident.photo_url}
-              alt={`Trou ${incident.hole_number}`}
-              fill
-              className="object-cover"
-            />
-          </div>
-        ) : (
-          <div className="h-[120px] w-[120px] flex-shrink-0 rounded-lg bg-slate-100 flex items-center justify-center">
-            <span className="text-xs text-slate-400">Pas de photo</span>
-          </div>
-        )}
+    <>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        whileHover={{ y: -2 }}
+        transition={{ duration: 0.2 }}
+        onClick={onClick}
+        className="group cursor-pointer rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 hover:shadow-xl"
+      >
+        <div className="flex items-center gap-4">
+          {/* Photo - Left */}
+          {incident.photo_url ? (
+            <div
+              onClick={handlePhotoClick}
+              className="relative h-[120px] w-[120px] flex-shrink-0 overflow-hidden rounded-lg bg-slate-100 cursor-zoom-in transition-transform duration-200 hover:scale-105"
+            >
+              <Image
+                src={incident.photo_url}
+                alt={`Trou ${incident.hole_number}`}
+                fill
+                className="object-cover"
+                sizes="120px"
+                loading="lazy"
+              />
+            </div>
+          ) : null}
 
         {/* Content - Center */}
         <div className="flex-1 min-w-0">
@@ -90,9 +102,21 @@ export function IncidentFlowCardWide({
               onUrgent={onUrgent || (() => {})}
             />
           </div>
-          <div className={`h-3 w-3 rounded-full ${statusColor}`}></div>
+          {/* Pastille de statut - Temporairement désactivée */}
+          {/* <div className={`h-3 w-3 rounded-full ${statusColor}`}></div> */}
         </div>
       </div>
     </motion.div>
+
+    {/* Modale photo full-screen */}
+    {incident.photo_url && (
+      <PhotoModal
+        isOpen={isPhotoModalOpen}
+        onClose={() => setIsPhotoModalOpen(false)}
+        imageUrl={incident.photo_url}
+        alt={`Photo du trou ${incident.hole_number}`}
+      />
+    )}
+    </>
   )
 }
